@@ -34,17 +34,20 @@ Phosphor opens a Terminal window that runs the service's own sign-in (`claude au
 connects within seconds of you finishing in the browser. When the CLI exits, Phosphor reads the usage
 with the new login to confirm, and shows why if it didn't work. Pressing Connect again while a sign-in is
 open brings that window back instead of opening another. Phosphor never sees your password or the OAuth code.
-Phosphor **only reads** tokens the official CLIs already store (`~/.claude/.credentials.json` or the
+Phosphor reads tokens the official CLIs already store (`~/.claude/.credentials.json` or the
 `Claude Code-credentials` Keychain item, `~/.codex/auth.json`,
-`~/.grok/auth.json`, `gh auth token`; Antigravity and Muse are asked via their own `agy … /usage` and `muse usage --json`). It never refreshes, writes or uploads them, and it sends each token only to
-that provider's own API.
+`~/.grok/auth.json`, `gh auth token`; Antigravity and Muse are asked via their own `agy … /usage` and `muse usage --json`).
+For Codex and Grok, when the access token is close to expiry, Phosphor refreshes it through that CLI's official
+OAuth endpoint and writes the updated tokens back to the same `auth.json` (unknown fields are kept; a concurrent
+CLI refresh is not overwritten). It never uploads tokens, and it sends each access token only to that provider's own API.
 
 Claude Code's access token only lasts a few hours, and Claude Code renews it itself, but only while it
-runs. When the stored token has passed its expiry and Claude Code still holds a refresh token, Phosphor
-doesn't call that "login expired" (and doesn't use the refresh token, which would rotate Claude Code's login
-behind its back): the row switches to today's / 7-day tokens and estimated cost from Claude Code's own logs,
-and live limits come back the next time you use Claude Code. **Connect** only appears when there really is
-no usable login (no refresh token, or a 401 that persists after re-reading the Keychain).
+runs. Phosphor does not use Claude's refresh token and never writes that Keychain item, so it won't rotate
+Claude Code's login behind its back. When the stored token has passed its expiry and a refresh token is still
+there, the row shows "토큰 갱신 대기 · 로컬 로그 유지" / "Waiting for token refresh · local logs active" and
+keeps today's / 7-day tokens from Claude Code's own logs. Live limits come back the next time Claude Code
+refreshes the item. **Connect** only appears when there really is no usable login (no refresh token, or a 401
+that persists after re-reading the Keychain).
 
 Not every service has a % limit, so a row can show three kinds of reading:
 
@@ -204,7 +207,7 @@ calendar apps such as 일정.
 ## Build & develop
 
 ```bash
-./scripts/build-app.sh            # dist/Phosphor.app (ad-hoc signed)
+./scripts/build-app.sh            # dist/Phosphor.app (stable local identity, or ad-hoc in CI)
 ./scripts/build-app.sh --run      # build and launch
 UNIVERSAL=1 ./scripts/build-app.sh  # arm64 + x86_64 (needs full Xcode)
 ./scripts/screenshots.sh          # regenerate docs/screenshots from --demo

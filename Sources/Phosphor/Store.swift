@@ -305,7 +305,7 @@ final class UsageStore: ObservableObject {
                 if let f = history.forecast(provider: s.id, window: w, now: last.at), f.hitsLimitAt > Date() { w.forecast = f }
                 return w
             }
-            note = "cached \(Fmt.clock(last.at)) · live again when Claude Code runs"
+            note = "cached \(Fmt.clock(last.at)) · 토큰 갱신 대기 · 로컬 로그 유지"
         }
         if s.id == "claude", let w = logs.snapshot.week["claude"], w.tokens > 0 {
             windows.append(.meter("TODAY", used: Double(logs.snapshot.today["claude"]?.tokens ?? 0), unit: "tokens"))
@@ -314,7 +314,7 @@ final class UsageStore: ObservableObject {
             } else {
                 windows.append(.meter("7D TOK", used: Double(w.tokens), unit: "tokens"))
             }
-            note = note ?? "from local logs · live limits when Claude Code runs"
+            note = note ?? "from local logs · 토큰 갱신 대기 · 로컬 로그 유지"
         }
         guard !windows.isEmpty else { return ProviderSnapshot(info: s.info, state: .idle(m, plan: plan), updatedAt: s.updatedAt) }
         var out = ProviderSnapshot(info: s.info, state: .ok(windows: windows, plan: plan), updatedAt: s.updatedAt)

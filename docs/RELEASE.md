@@ -9,8 +9,10 @@
 
 ## Signing and notarization (optional)
 
-Phosphor ships ad-hoc signed until a real Apple Developer ID is available. Nothing in the scripts
-assumes or fakes an identity.
+Local `./scripts/build-app.sh` uses a stable signing identity when one is available (`PHOSPHOR_SIGN_IDENTITY`,
+an existing Developer ID / Apple Development certificate, or a reusable self-signed "Phosphor Local"
+identity) so Keychain ACLs survive rebuilds. CI and machines with no local cert fall back to an ad-hoc
+signature. Release zips stay ad-hoc until a real Apple Developer ID is set.
 
 - Sign: `PHOSPHOR_SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./scripts/release.sh 0.2.0`
   (list yours with `security find-identity -v -p codesigning`).

@@ -299,7 +299,7 @@ struct ProviderRow: View {
                 }
                 if let cached = snap.staleNote {
                     Text(theme.name("◷ " + cached)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
-                        .help("Claude Code’s access token expired because Claude Code hasn’t run lately; it renews it itself next time. These bars are the last live reading.")
+                        .help("토큰 갱신 대기 · 로컬 로그 유지 / Waiting for token refresh · local logs active. Claude Code renews its own token the next time it runs; Phosphor does not write that Keychain item. These bars are the last live reading or local log usage.")
                 }
                 ForEach(creditLines, id: \.self) { c in
                     Text(theme.name("↻ \(c.title) \(c.amount)" + (c.expires.map { " · until \(Fmt.shortDate($0))" } ?? "")))
