@@ -98,3 +98,8 @@ swift test                    # PhosphorCore unit tests
 ## License
 
 MIT. Not affiliated with Anthropic, OpenAI, Google, xAI, GitHub, LinearB or any provider listed.
+
+---
+
+*For my beloved wife, daughter, and son. ♥*  
+*사랑하는 아내와 딸, 아들에게 바칩니다. ♥*
