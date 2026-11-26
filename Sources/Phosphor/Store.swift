@@ -98,50 +98,90 @@ final class UsageStore: ObservableObject {
         guard !refreshing else { return }
         refreshing = true
         Task {
-            var all: [ProviderSnapshot]
-            if demo {
-                let d = demoSource.fetch()
-                history.seed(d.samples, now: Date())
-                all = d.snapshots
-            } else {
-                async let a = claude.fetch()
-                async let b = codex.fetch()
-                async let c = antigravity.fetch()
-                async let d = grok.fetch()
-                async let e = copilot.fetch()
-                async let f = muse.fetch()
-                async let g = grokbot.fetch()
-                async let custom = CustomSource().fetch()
-                async let more = fetchExtras()
-                all = await a + b + c + d + e + f + g + custom + more
-                // Rate-limited (429) or a blip: keep showing the last good reading.
-                all = all.map { s in
-                    if case .error(let m) = s.state, m == "HTTP 429" || m.hasPrefix("HTTP 5"),
-                       let prev = snapshots.first(where: { $0.id == s.id }), prev.isConnected { return prev }
-                    return s
-                }
-                claudeWaiting = nil
-                all = all.map(claudeFallback)
-                history.record(all)
-            }
-            all = history.annotate(all)
-            narrate(all)
-            snapshots = sorted(all)
-            lastRefresh = Date()
-            refreshing = false
-            checkAlerts()
-            if !demo {
-                logs.refreshIfDue()
-                status.refreshIfDue(ids: visible.map(\.id))
-                if Prefs.shared.showDevStats { dev.refreshIfDue() }
-            }
-            // Every 30 min, or as soon as new settings-screen readings are saved.
-            let screens = (try? FileManager.default.attributesOfItem(atPath: ScreenReadings.file.path))?[.modificationDate] as? Date
-            if !demo, (accountsAt.map { Date().timeIntervalSince($0) > 1800 } ?? true) || screens != screensAt {
-                screensAt = screens
-                refreshAccounts()
-            }
+            let loaded = await self.loadSnapshots()
+            self.applyLoadedSnapshots(loaded)
         }
+    }
+
+    /// Split out of `refresh()` so the Swift type checker on Xcode 16.4 can finish
+    /// (the old 9-way `await a + b + …` expression timed out on GitHub Actions).
+    private func loadSnapshots() async -> [ProviderSnapshot] {
+        if demo {
+            let d = demoSource.fetch()
+            history.seed(d.samples, now: Date())
+            return d.snapshots
+        }
+
+        async let claudeSnaps = claude.fetch()
+        async let codexSnaps = codex.fetch()
+        async let antigravitySnaps = antigravity.fetch()
+        async let grokSnaps = grok.fetch()
+        async let copilotSnaps = copilot.fetch()
+        async let museSnaps = muse.fetch()
+        async let grokbotSnaps = grokbot.fetch()
+        async let customSnaps = CustomSource().fetch()
+        async let extraSnaps = fetchExtras()
+
+        var all: [ProviderSnapshot] = []
+        all.append(contentsOf: await claudeSnaps)
+        all.append(contentsOf: await codexSnaps)
+        all.append(contentsOf: await antigravitySnaps)
+        all.append(contentsOf: await grokSnaps)
+        all.append(contentsOf: await copilotSnaps)
+        all.append(contentsOf: await museSnaps)
+        all.append(contentsOf: await grokbotSnaps)
+        all.append(contentsOf: await customSnaps)
+        all.append(contentsOf: await extraSnaps)
+
+        all = keepLastGoodOnBlip(all)
+        claudeWaiting = nil
+        all = all.map(claudeFallback)
+        history.record(all)
+        return all
+    }
+
+    /// Rate-limited (429) or a 5xx blip: keep showing the last good reading.
+    private func keepLastGoodOnBlip(_ incoming: [ProviderSnapshot]) -> [ProviderSnapshot] {
+        incoming.map { current in
+            guard case .error(let message) = current.state,
+                  isTransientFetchError(message),
+                  let previous = snapshots.first(where: { $0.id == current.id }),
+                  previous.isConnected
+            else { return current }
+            return previous
+        }
+    }
+
+    private func isTransientFetchError(_ message: String) -> Bool {
+        message == "HTTP 429" || message.hasPrefix("HTTP 5")
+    }
+
+    private func applyLoadedSnapshots(_ loaded: [ProviderSnapshot]) {
+        let annotated = history.annotate(loaded)
+        narrate(annotated)
+        snapshots = sorted(annotated)
+        lastRefresh = Date()
+        refreshing = false
+        checkAlerts()
+        guard !demo else { return }
+        logs.refreshIfDue()
+        status.refreshIfDue(ids: visible.map(\.id))
+        if Prefs.shared.showDevStats { dev.refreshIfDue() }
+        refreshAccountsIfDue()
+    }
+
+    /// Every 30 min, or as soon as new settings-screen readings are saved.
+    private func refreshAccountsIfDue() {
+        let screens = screenReadingsModifiedAt()
+        let accountsStale = accountsAt.map { Date().timeIntervalSince($0) > 1800 } ?? true
+        guard accountsStale || screens != screensAt else { return }
+        screensAt = screens
+        refreshAccounts()
+    }
+
+    private func screenReadingsModifiedAt() -> Date? {
+        let attrs = try? FileManager.default.attributesOfItem(atPath: ScreenReadings.file.path)
+        return attrs?[.modificationDate] as? Date
     }
 
     func refreshAccounts() {
