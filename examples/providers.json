@@ -1,0 +1,18 @@
+[
+  {
+    "id": "perplexity",
+    "name": "Perplexity",
+    "color": "#20B8CD",
+    "command": "~/.config/phosphor/scripts/manual.sh perplexity"
+  },
+  {
+    "id": "grok",
+    "name": "Grok",
+    "command": "~/.config/phosphor/scripts/manual.sh grok"
+  },
+  {
+    "id": "muse",
+    "name": "Muse",
+    "command": "~/.config/phosphor/scripts/manual.sh muse"
+  }
+]

@@ -1,0 +1,16 @@
+{
+  "id": "synthwave",
+  "name": "Synthwave",
+  "extends": "retro",
+  "font": "rounded",
+  "bar": "capsule",
+  "colors": {
+    "fg": "#FF5CF0", "dim": "#7FE7FFB3", "track": "#FF5CF026",
+    "danger": "#FFE45C", "warn": "#FFE45C", "border": "#FF5CF066"
+  },
+  "backdrop": { "type": "solid", "color": "#1A0B2E" },
+  "effects": { "scanlines": false, "cursor": false, "glowRadius": 4 },
+  "corner": 14,
+  "header": "▲ NEON QUOTA",
+  "prompt": "//"
+}
