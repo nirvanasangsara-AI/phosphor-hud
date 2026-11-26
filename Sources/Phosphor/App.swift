@@ -109,50 +109,6 @@ struct PhosphorMain {
 }
 
 /// Borderless, non-activating, always-on-top panel that follows you across Spaces.
-final class HUDPanel: NSPanel {
-    init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
-                   styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: false)
-        isFloatingPanel = true
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isMovableByWindowBackground = true
-        hidesOnDeactivate = false
-    }
-    override var canBecomeKey: Bool { true }
-
-    /// The SwiftUI hosting view swallows mouse-downs, so "movable by background" never kicks in.
-    /// The HUD has no clickable controls: any left-drag anywhere moves the window.
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown {
-            // A press on a row's grip reorders rows instead of moving the window.
-            let p = CGPoint(x: event.locationInWindow.x, y: frame.height - event.locationInWindow.y)
-            if MainActor.assumeIsolated({ ReorderModel.shared.isGrip(p) }) {
-                super.sendEvent(event)
-                return
-            }
-            let before = frame.origin
-            performDrag(with: event)            // returns on mouse-up
-            // Didn't move: it was a click, so let SwiftUI have it (e.g. the Connect button).
-            if frame.origin == before,
-               let up = NSEvent.mouseEvent(with: .leftMouseUp, location: event.locationInWindow,
-                                           modifierFlags: event.modifierFlags, timestamp: event.timestamp,
-                                           windowNumber: event.windowNumber, context: nil,
-                                           eventNumber: event.eventNumber, clickCount: event.clickCount,
-                                           pressure: 0) {
-                super.sendEvent(event)
-                super.sendEvent(up)
-            }
-            return
-        }
-        super.sendEvent(event)
-    }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let demo = CommandLine.arguments.contains("--demo")
@@ -169,6 +125,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         panel = HUDPanel()
+        panel.onUserResize = { [weak self] size in
+            guard let self else { return }
+            self.prefs.hudUserSized = true
+            self.prefs.hudWidth = size.width
+            self.prefs.hudHeight = size.height
+        }
+        if self.prefs.hudUserSized, self.prefs.hudWidth >= HUDPanel.minWidth, self.prefs.hudHeight >= HUDPanel.minHeight {
+            var f = panel.frame
+            f.size = NSSize(width: self.prefs.hudWidth, height: self.prefs.hudHeight)
+            panel.setFrame(f, display: false)
+        }
         let host = NSHostingView(rootView: RootView(store: store) { [weak self] size in
             self?.resize(to: size)
         })
@@ -274,7 +241,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Keep the top-left corner fixed while the content grows or shrinks.
+    /// Once the user has resized the panel themselves, we stop fighting their frame.
     private func resize(to size: CGSize) {
+        guard !prefs.hudUserSized else { return }
         guard size.width > 0, size.height > 0 else { return }
         var f = panel.frame
         guard abs(f.width - size.width) > 0.5 || abs(f.height - size.height) > 0.5 else { return }
@@ -320,6 +289,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
+        if let pt = panel.lastRightClick, let key = panel.providerKey(at: pt), !key.hasPrefix("group:") {
+            let name = store.snapshots.first { $0.id == key }?.info.name ?? ProviderInfo.lookup(key).name
+            let hide = item("숨기기 — \(name)", #selector(hideProvider(_:)))
+            hide.representedObject = key
+            menu.addItem(hide)
+            menu.addItem(.separator())
+        }
+
         menu.addItem(item(panel.isVisible ? "Hide HUD" : "Show HUD", #selector(toggleHUD), key: "h"))
         menu.addItem(item("Refresh now", #selector(refreshNow), key: "r"))
         menu.addItem(.separator())
@@ -361,6 +338,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let providers = NSMenu()
+        let visibleHdr = NSMenuItem(title: "표시할 서비스", action: nil, keyEquivalent: "")
+        visibleHdr.isEnabled = false
+        providers.addItem(visibleHdr)
+        if prefs.hudUserSized {
+            providers.addItem(item("Reset window size (auto-fit)", #selector(resetWindowSize)))
+        }
         var lastFamily: String?
         for s in store.snapshots {
             let fam = ProviderFamilies.family(of: s.id)
@@ -531,6 +514,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let id = s.representedObject as? String else { return }
         if prefs.hidden.contains(id) { prefs.hidden.remove(id) } else { prefs.hidden.insert(id) }
         updateStatusTitle(store.snapshots)
+    }
+    @objc private func hideProvider(_ s: NSMenuItem) {
+        guard let id = s.representedObject as? String else { return }
+        prefs.hidden = ProviderVisibility.hiding(id, in: prefs.hidden)
+        updateStatusTitle(store.snapshots)
+    }
+    @objc private func resetWindowSize() {
+        prefs.hudUserSized = false
+        prefs.hudWidth = 0
+        prefs.hudHeight = 0
+        prefs.objectWillChange.send()
     }
     @objc private func pickInterval(_ s: NSMenuItem) {
         if let v = s.representedObject as? Double { prefs.refreshSeconds = v; store.reschedule() }

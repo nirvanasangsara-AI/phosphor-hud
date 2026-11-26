@@ -37,9 +37,28 @@ public struct PriceTable: Sendable {
     public var isEmpty: Bool { prices.isEmpty }
 
     /// Exact name first, then without a provider prefix, a date stamp, or a "[1m]"-style tag.
+    /// If those miss, a suffix match finds official list prices stored under `openai.gpt-…`
+    /// or `vendor/gpt-…` keys. Regional markups (azure/eu, …) are a last resort.
     public func price(for model: String) -> ModelPrice? {
         for key in Self.candidates(model) { if let p = prices[key] { return p } }
-        return nil
+        return suffixMatch(model)
+    }
+
+    private func suffixMatch(_ model: String) -> ModelPrice? {
+        let want = Self.candidates(model).first ?? model.lowercased()
+        guard !want.isEmpty else { return nil }
+        var best: (Int, ModelPrice)?
+        for (k, p) in prices {
+            let last = k.split(separator: "/").last.map(String.init) ?? k
+            guard last == want || k.hasSuffix("." + want) || k.hasSuffix("/" + want) else { continue }
+            let rank: Int
+            if k == want || k == "openai/" + want { rank = 0 }
+            else if k.hasPrefix("openai/") || k.hasPrefix("openai.") || k.hasPrefix("global.openai.") { rank = 1 }
+            else if k.hasPrefix("azure/eu/") || k.hasPrefix("azure/apac/") || k.hasPrefix("azure/us/") { rank = 8 }
+            else { rank = 4 }
+            if best == nil || rank < best!.0 { best = (rank, p) }
+        }
+        return best?.1
     }
 
     static func candidates(_ model: String) -> [String] {

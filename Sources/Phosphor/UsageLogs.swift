@@ -60,6 +60,16 @@ final class UsageLogs: ObservableObject {
         ledger.modelBreakdown(lastDays: days, source: source).map { ($0.model, $0.usage, prices.cost($0.usage, model: $0.model)) }
     }
 
+    /// One point per day for the last `days` days (oldest first), including zeros for missing days.
+    func sparkline(source: String, days: Int, cost: Bool, now: Date = Date()) -> [Double] {
+        let keys = (0..<days).reversed().map { DayKey.of(now.addingTimeInterval(-Double($0) * 86_400)) }
+        let byDay = Dictionary(uniqueKeysWithValues: daily.filter { $0.source == source }.map { ($0.day, $0) })
+        return keys.map { key in
+            guard let row = byDay[key] else { return 0 }
+            return cost ? row.cost : Double(row.tokens)
+        }
+    }
+
     private func recompute() {
         daily = ledger.dailyTotals(prices: prices)
         var s = Snapshot(scannedAt: ledger.scannedAt)

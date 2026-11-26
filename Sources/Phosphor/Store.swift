@@ -157,7 +157,7 @@ final class UsageStore: ObservableObject {
     }
 
     private func applyLoadedSnapshots(_ loaded: [ProviderSnapshot]) {
-        let annotated = history.annotate(loaded)
+        let annotated = decorate(history.annotate(loaded))
         narrate(annotated)
         snapshots = sorted(annotated)
         lastRefresh = Date()
@@ -218,6 +218,74 @@ final class UsageStore: ObservableObject {
     func resetOrder() {
         Prefs.shared.rowOrder = []
         snapshots = sorted(snapshots)
+    }
+
+    /// Attach API-equivalent spend from local logs (Codex / Claude / Gemini) and weekly sparklines.
+    private func decorate(_ snaps: [ProviderSnapshot]) -> [ProviderSnapshot] {
+        snaps.map { s in
+            var s = attachLogSpend(s)
+            guard case .ok(var windows, let plan) = s.state else { return s }
+            windows = windows.map { w in
+                var w = w
+                if w.sparkline.isEmpty, w.isWeekly {
+                    let hist = history.sparkline(provider: s.id, window: w.label)
+                    if !hist.isEmpty { w.sparkline = hist }
+                    else if w.gauged { w.sparkline = [w.usedPercent] }
+                }
+                return w
+            }
+            s.state = .ok(windows: windows, plan: plan)
+            return s
+        }
+    }
+
+    private func logSourceKey(_ id: String) -> String? {
+        if id == "claude" || id.hasPrefix("claude@") { return "claude" }
+        if id == "codex" || id.hasPrefix("codex@") { return "codex" }
+        if id == "gemini" || id.hasPrefix("gemini@") { return "gemini" }
+        return nil
+    }
+
+    /// Show 7-day API-equivalent $ on the row itself whenever local logs have priced usage.
+    private func attachLogSpend(_ s: ProviderSnapshot) -> ProviderSnapshot {
+        guard let key = logSourceKey(s.id), let week = logs.snapshot.week[key], week.tokens > 0 else { return s }
+        func series(_ cost: Bool) -> [Double] {
+            logs.sparkline(source: key, days: 7, cost: cost)
+        }
+        func appendMeters(_ windows: inout [UsageWindow]) {
+            if !windows.contains(where: { $0.label == "7D EST" || $0.label == "7D API" }) {
+                if week.cost > 0 {
+                    var m = UsageWindow.meter("7D EST", used: week.cost, unit: "usd")
+                    m.detail = "API-equivalent from local logs"
+                    m.sparkline = series(true)
+                    windows.append(m)
+                } else if !windows.contains(where: { $0.label == "7D TOK" }) {
+                    var m = UsageWindow.meter("7D TOK", used: Double(week.tokens), unit: "tokens")
+                    if week.unpricedTokens > 0 {
+                        m.detail = "\(Fmt.compact(Double(week.unpricedTokens))) tokens unpriced"
+                    }
+                    m.sparkline = series(false)
+                    windows.append(m)
+                }
+            }
+        }
+        switch s.state {
+        case .ok(var windows, let plan):
+            appendMeters(&windows)
+            var out = s
+            out.state = .ok(windows: windows, plan: plan)
+            return out
+        case .idle(let m, let plan):
+            var windows: [UsageWindow] = []
+            appendMeters(&windows)
+            guard !windows.isEmpty else { return s }
+            var out = s
+            out.state = .ok(windows: windows, plan: plan)
+            out.staleNote = m
+            return out
+        default:
+            return s
+        }
     }
 
     /// Claude Code's token is waiting for Claude Code to refresh it: instead of a Connect prompt,

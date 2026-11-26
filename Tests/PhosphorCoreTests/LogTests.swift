@@ -161,6 +161,14 @@ private func obj(_ s: String) -> [String: Any] {
         #expect(table.price(for: "mystery-model") == nil)
     }
 
+    @Test func lookupFindsDottedAndPrefixedOpenAIKeys() {
+        let onlyDotted = try! PriceTable(litellmJSON: Data("""
+        {"openai.gpt-6.1-terra":{"input_cost_per_token":1e-06,"output_cost_per_token":5e-06}}
+        """.utf8))
+        #expect(onlyDotted.price(for: "gpt-6.1-terra") != nil)
+        #expect(onlyDotted.cost(TokenUsage(input: 1_000_000), model: "gpt-6.1-terra").map { abs($0 - 1.0) < 1e-9 } == true)
+    }
+
     @Test func costUsesCacheRatesAndLoggedCost() throws {
         let c = try #require(table.cost(TokenUsage(input: 1000, output: 1000, cacheRead: 10000, cacheWrite: 1000), model: "claude-sonnet-5"))
         #expect(abs(c - (0.003 + 0.015 + 0.003 + 0.00375)) < 1e-12)

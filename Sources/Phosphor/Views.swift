@@ -13,10 +13,17 @@ struct RootView: View {
     var body: some View {
         let theme = registry.theme(prefs.theme)
         TimelineView(.periodic(from: .now, by: 20)) { ctx in
-            panel(theme, now: ctx.date)
+            if prefs.hudUserSized, prefs.hudWidth >= 240, prefs.hudHeight >= 140 {
+                ScrollView(.vertical, showsIndicators: false) {
+                    panel(theme, now: ctx.date)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                panel(theme, now: ctx.date)
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { onResize($0) }
+            }
         }
-        .fixedSize()
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { onResize($0) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -33,6 +40,11 @@ struct RootView: View {
     private func width(_ theme: Theme, count: Int) -> CGFloat {
         if theme.layout == .raid { return count > 3 ? 390 : 204 }
         return prefs.compact ? theme.compactWidth : theme.width
+    }
+
+    private func panelWidth(_ theme: Theme, count: Int) -> CGFloat {
+        if prefs.hudUserSized, prefs.hudWidth >= 240 { return prefs.hudWidth }
+        return width(theme, count: count)
     }
 
     @ViewBuilder
@@ -73,7 +85,7 @@ struct RootView: View {
         }
         .modifier(Glow(theme: theme))
         .padding(14)
-        .frame(width: width(theme, count: items.count), alignment: .leading)
+        .frame(width: panelWidth(theme, count: items.count), alignment: .leading)
         .background {
             ZStack {
                 BackdropView(theme: theme)
@@ -109,6 +121,9 @@ struct Header: View {
                 Text(status)
                     .font(theme.font(10))
                     .foregroundStyle(theme.dim)
+                if !Prefs.shared.hidden.isEmpty {
+                    HiddenServicesButton(theme: theme, store: store)
+                }
                 Button { Prefs.shared.showChart.toggle() } label: {
                     Image(systemName: Prefs.shared.showChart ? "chart.bar.fill" : "chart.bar")
                         .font(.system(size: 10)).foregroundStyle(theme.dim)
@@ -172,7 +187,7 @@ struct ProviderRow: View {
             let h = hover
             h.inside = inside
             if inside {
-                let ready = account != nil
+                let ready = account != nil || logged != nil
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { if h.inside && ready { h.showCard = true } }
             } else {
                 h.showCard = false
@@ -183,6 +198,28 @@ struct ProviderRow: View {
                 AccountCard(name: snap.info.name, account: account, theme: theme, health: health, logged: logged)
                     .environment(\.colorScheme, .dark)
                     .presentationBackground(Color(white: 0.11))
+            } else if let logged {
+                Text(logged)
+                    .font(.system(size: 11))
+                    .padding(12)
+                    .frame(width: 280, alignment: .leading)
+                    .environment(\.colorScheme, .dark)
+                    .presentationBackground(Color(white: 0.11))
+            }
+        }
+        .contextMenu {
+            Button("숨기기 — Hide") { Prefs.shared.hideProvider(snap.id) }
+        }
+        .overlay(alignment: .topTrailing) {
+            if hover.inside {
+                Button { Prefs.shared.hideProvider(snap.id) } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.dim.opacity(0.9))
+                        .padding(2)
+                }
+                .buttonStyle(.plain)
+                .help("숨기기 — hide this service (restore from 숨긴 서비스 보기)")
             }
         }
     }
@@ -339,6 +376,10 @@ struct WindowLine: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if w.isWeekly {
+                    UsageSparkline(values: w.sparkline.isEmpty ? [w.gauged ? w.usedPercent : 0] : w.sparkline,
+                                   tint: tint)
+                }
                 Text(Fmt.countdown(to: w.resetsAt, now: now))
                     .font(theme.font(10))
                     .monospacedDigit()
@@ -348,6 +389,14 @@ struct WindowLine: View {
             if w.gauged, let amount = w.amountText {   // balance with a known total
                 Text(theme.name(amount)).font(theme.font(10)).monospacedDigit().foregroundStyle(theme.dim)
                     .lineLimit(1).padding(.leading, labelWidth + 8)
+            }
+            if !w.tags.isEmpty {
+                TagRow(tags: w.tags, theme: theme, tint: tint)
+                    .padding(.leading, labelWidth + 8)
+            } else if let detail = w.detail, !detail.isEmpty {
+                Text(theme.name(detail)).font(theme.font(9)).foregroundStyle(theme.dim)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, labelWidth + 8)
             }
             if let f = w.forecast {
                 ForecastLine(f: f, theme: theme, now: now).padding(.leading, labelWidth + 8)
@@ -683,7 +732,7 @@ struct CombatLog: View {
 // MARK: - Account card (hover)
 
 final class HoverState: ObservableObject {
-    var inside = false
+    @Published var inside = false
     @Published var showCard = false
 }
 
@@ -948,5 +997,148 @@ struct StageWallpaper: View {
             Circle().fill(Color(hex: "#3F8CFF")).frame(width: 380).blur(radius: 110).offset(x: 240, y: 120)
             Circle().fill(Color(hex: "#18C29C")).frame(width: 260).blur(radius: 90).offset(x: -120, y: 260)
         }
+    }
+}
+
+
+// MARK: - Weekly sparkline
+
+struct UsageSparkline: View {
+    let values: [Double]
+    let tint: Color
+    var body: some View {
+        let pts = SparklineSeries.normalize(values)
+        Canvas { ctx, size in
+            guard let first = pts.first, pts.count >= 1 else { return }
+            var line = Path()
+            var fill = Path()
+            func pt(_ i: Int, _ v: Double) -> CGPoint {
+                let x = pts.count == 1 ? size.width / 2 : size.width * CGFloat(i) / CGFloat(pts.count - 1)
+                let y = size.height - CGFloat(v) * (size.height - 2) - 1
+                return CGPoint(x: x, y: y)
+            }
+            let start = pt(0, first)
+            line.move(to: start)
+            fill.move(to: CGPoint(x: start.x, y: size.height))
+            fill.addLine(to: start)
+            for (i, v) in pts.enumerated().dropFirst() {
+                let p = pt(i, v)
+                line.addLine(to: p)
+                fill.addLine(to: p)
+            }
+            if let lastI = pts.indices.last {
+                fill.addLine(to: CGPoint(x: pt(lastI, pts[lastI]).x, y: size.height))
+                fill.closeSubpath()
+            }
+            ctx.fill(fill, with: .color(tint.opacity(0.22)))
+            ctx.stroke(line, with: .color(tint.opacity(0.95)), lineWidth: 1.15)
+        }
+        .frame(width: 52, height: 16)
+        .help("Last 7 days")
+        .accessibilityLabel("Weekly trend")
+    }
+}
+
+struct TagRow: View {
+    let tags: [String]
+    let theme: Theme
+    let tint: Color
+    var body: some View {
+        // Compact wrapping badges so every installed / loaded model name is visible.
+        VStack(alignment: .leading, spacing: 3) {
+            FlowTags(tags: tags, theme: theme, tint: tint)
+        }
+    }
+}
+
+/// Simple left-to-right wrapping row of name badges (no third-party layout helpers).
+struct FlowTags: View {
+    let tags: [String]
+    let theme: Theme
+    let tint: Color
+    var body: some View {
+        // A wrapping HStack via `+` text would truncate; use a flexible LazyVGrid with
+        // adaptive columns so names stay readable even when many models are installed.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 4, alignment: .leading)],
+                  alignment: .leading, spacing: 4) {
+            ForEach(tags, id: \.self) { name in
+                Text(name)
+                    .font(theme.font(8, .medium))
+                    .foregroundStyle(theme.fg)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(tint.opacity(0.18)))
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+// MARK: - Hidden providers (restore)
+
+struct HiddenServicesButton: View {
+    let theme: Theme
+    @ObservedObject var store: UsageStore
+    @ObservedObject var prefs = Prefs.shared
+    @StateObject private var pop = HoverFlag()
+
+    var body: some View {
+        Button { pop.on.toggle() } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(theme.name("숨긴 서비스 \(prefs.hidden.count)"))
+                    .font(theme.font(9, .medium))
+            }
+            .foregroundStyle(theme.dim)
+        }
+        .buttonStyle(.plain)
+        .help("숨긴 서비스 보기 — show hidden providers and turn any of them back on")
+        .popover(isPresented: $pop.on, arrowEdge: .bottom) {
+            HiddenServicesList(theme: theme, store: store)
+                .environment(\.colorScheme, .dark)
+                .presentationBackground(Color(white: 0.11))
+        }
+    }
+}
+
+struct HiddenServicesList: View {
+    let theme: Theme
+    @ObservedObject var store: UsageStore
+    @ObservedObject var prefs = Prefs.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("표시할 서비스").font(.system(size: 12, weight: .semibold))
+            Text("Hidden providers are left out of the HUD, the menu-bar % and the monthly total. Turn any of them back on here.")
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            let ids = (store.snapshots.map(\.id) + prefs.hidden.sorted()).uniqued()
+            ForEach(ids, id: \.self) { id in
+                let on = !prefs.hidden.contains(id)
+                let name = store.snapshots.first { $0.id == id }?.info.name ?? ProviderInfo.lookup(id).name
+                Button {
+                    if on { prefs.hideProvider(id) } else { prefs.showProvider(id) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(on ? theme.tint(ProviderInfo.lookup(id)) : .secondary)
+                        Text(name).foregroundStyle(.primary)
+                        Spacer()
+                        if !on { Text("숨김").font(.system(size: 10)).foregroundStyle(.secondary) }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(width: 260, alignment: .leading)
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }

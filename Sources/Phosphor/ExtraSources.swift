@@ -106,11 +106,17 @@ struct OllamaSource: UsageSource {
             do { tags = try await HTTP.json(URLRequest(url: URL(string: base + "/api/tags")!)) }
             catch { throw ProviderError.idle("Installed · server not running") }
             let ps = (try? await HTTP.json(URLRequest(url: URL(string: base + "/api/ps")!))) ?? [:]
-            let models = (tags["models"] as? [Any])?.count ?? 0
-            let loaded = (ps["models"] as? [[String: Any]]) ?? []
-            let vram = loaded.compactMap { num($0["size_vram"]) }.reduce(0, +)
-            var w: [UsageWindow] = [.meter("MODELS", used: Double(models), unit: "installed"),
-                                    .meter("LOADED", used: Double(loaded.count), unit: "running")]
+            let installed = uniqueNames((tags["models"] as? [[String: Any]] ?? []).compactMap { modelName($0) })
+            let loaded = uniqueNames((ps["models"] as? [[String: Any]] ?? []).compactMap { modelName($0) })
+            let loadedRows = (ps["models"] as? [[String: Any]]) ?? []
+            let vram = loadedRows.compactMap { num($0["size_vram"]) }.reduce(0, +)
+            var inst = UsageWindow.meter("INSTALLED", used: Double(installed.count), unit: "models")
+            inst.detail = "설치됨 · models on disk"
+            inst.tags = installed
+            var run = UsageWindow.meter("LOADED", used: Double(loaded.count), unit: "in RAM")
+            run.detail = "실행 중 · currently loaded in memory"
+            run.tags = loaded
+            var w: [UsageWindow] = [inst, run]
             if vram > 0 { w.append(.meter("VRAM", used: vram / 1_073_741_824, unit: "GB")) }
             return (w, "Local · free")
         }
@@ -221,4 +227,17 @@ struct AnthropicCostSource: UsageSource {
             return ([.meter("MONTH", used: cents / 100, unit: "usd")], "API · this month")
         }
     }
+}
+
+
+private func modelName(_ row: [String: Any]) -> String? {
+    let raw = (row["name"] as? String) ?? (row["model"] as? String)
+    guard let raw, !raw.isEmpty else { return nil }
+    return raw
+}
+
+
+private func uniqueNames(_ names: [String]) -> [String] {
+    var seen = Set<String>()
+    return names.filter { seen.insert($0).inserted }
 }

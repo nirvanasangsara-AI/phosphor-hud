@@ -36,6 +36,10 @@ final class History {
     private var recent: [String: [UsageSample]] = [:]   // "<provider>|<window>" → samples, oldest first
     /// Newest sample per provider and window, from everything on disk (for cached bars).
     private var latest: [String: [String: UsageSample]] = [:]
+    /// Downsampled (~1 sample/hour) series kept for 14 days, used by weekly sparklines.
+    private var spark: [String: [UsageSample]] = [:]
+    private static let sparkKeep: TimeInterval = 14 * 86400
+    private static let sparkBucket: TimeInterval = 3600
 
     static var file: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -65,7 +69,15 @@ final class History {
     /// Demo mode: replace memory with synthetic samples.
     func seed(_ samples: [UsageSample], now: Date) {
         recent = [:]
+        spark = [:]
+        latest = [:]
         for s in samples.sorted(by: { $0.t < $1.t }) { remember(s, now: now) }
+    }
+
+    /// Used-% (or whatever was recorded) over the last `days` days, oldest first.
+    func sparkline(provider: String, window: String, days: Int = 7, now: Date = Date()) -> [Double] {
+        let cutoff = now.timeIntervalSince1970 - Double(days) * 86_400
+        return (spark["\(provider)|\(window)"] ?? []).filter { $0.t >= cutoff }.map(\.u)
     }
 
     /// The last live reading of `provider`'s gauges, with when it was taken.
@@ -88,6 +100,19 @@ final class History {
         let cutoff = now.timeIntervalSince1970 - Self.keepInMemory
         list.removeAll { $0.t < cutoff }
         recent[key] = list
+        rememberSpark(s, now: now, key: key)
+    }
+
+    private func rememberSpark(_ s: UsageSample, now: Date, key: String) {
+        var list = spark[key, default: []]
+        if let last = list.last, s.t - last.t < Self.sparkBucket {
+            list[list.count - 1] = s
+        } else {
+            list.append(s)
+        }
+        let cutoff = now.timeIntervalSince1970 - Self.sparkKeep
+        list.removeAll { $0.t < cutoff }
+        spark[key] = list
     }
 
     // MARK: Forecast
@@ -153,6 +178,9 @@ final class History {
             if let s = try? dec.decode(UsageSample.self, from: Data(line)) { all.append(s) }
         }
         for s in all where (latest[s.p]?[s.w]?.t ?? 0) <= s.t { latest[s.p, default: [:]][s.w] = s }
+        for s in all where s.t >= now.timeIntervalSince1970 - Self.sparkKeep {
+            rememberSpark(s, now: now, key: "\(s.p)|\(s.w)")
+        }
         for s in all where s.t >= now.timeIntervalSince1970 - Self.keepInMemory { remember(s, now: now) }
         if data.count > Self.compactAbove {
             let keep = all.filter { $0.t >= now.timeIntervalSince1970 - Self.keepOnDisk }
