@@ -6,6 +6,11 @@
 </p>
 
 <p align="center">
+  <img src="docs/assets/menubar.png" width="140" alt="Phosphor menu bar item showing Φ 74% live usage in the macOS menu bar"><br>
+  <sub>Menu bar indicator (<code>Φ 74%</code>) — click to toggle the floating HUD, or keep it always on top.</sub>
+</p>
+
+<p align="center">
   <img src="docs/assets/hero.png" width="420" alt="Phosphor HUD with demo data: Claude Code, Codex, Google AI group, Grok, Copilot, burn rates and run-out times">
 </p>
 
