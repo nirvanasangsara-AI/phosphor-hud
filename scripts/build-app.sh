@@ -90,28 +90,41 @@ pick_existing_identity() {
 }
 
 create_local_identity() {
+  # Interactive only: trusting a new self-signed cert needs a Keychain / admin prompt.
+  # Unattended builds fall back to ad-hoc rather than leaving untrusted duplicates.
+  is_interactive || return 1
+  identity_exists "$LOCAL_IDENTITY" && return 0
   local tmp pass
-  tmp="$(mktemp -d "${TMPDIR:-/tmp}/phosphor-sign.XXXXXX")"
-  # Always shred the temporary key material, even if import fails.
-  cleanup() { rm -rf "$tmp"; }
-  trap cleanup RETURN
+  tmp="$(mktemp -d "${TMPDIR:-/tmp}/phosphor-sign.XXXXXX")" || return 1
   pass="$(/usr/bin/openssl rand -hex 16)"
-  /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
+  if ! /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 3650 -nodes \
     -subj "/CN=${LOCAL_IDENTITY}/O=Phosphor/" \
     -addext "basicConstraints=critical,CA:FALSE" \
     -addext "keyUsage=critical,digitalSignature" \
     -addext "extendedKeyUsage=codeSigning" \
-    -keyout "$tmp/key.pem" -out "$tmp/cert.pem" >/dev/null 2>&1
-  /usr/bin/openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
-    -out "$tmp/cert.p12" -passout "pass:${pass}" -name "$LOCAL_IDENTITY" >/dev/null 2>&1
+    -keyout "$tmp/key.pem" -out "$tmp/cert.pem" >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! /usr/bin/openssl pkcs12 -export -inkey "$tmp/key.pem" -in "$tmp/cert.pem" \
+    -out "$tmp/cert.p12" -passout "pass:${pass}" -name "$LOCAL_IDENTITY" >/dev/null 2>&1; then
+    rm -rf "$tmp"
+    return 1
+  fi
   local keychain="${HOME}/Library/Keychains/login.keychain-db"
   if [[ ! -f "$keychain" ]]; then
     keychain="${HOME}/Library/Keychains/login.keychain"
   fi
-  security import "$tmp/cert.p12" -k "$keychain" -P "$pass" \
-    -T /usr/bin/codesign -T /usr/bin/security >/dev/null
-  # Best-effort: allow codesign to use the key without a Keychain prompt.
+  if ! security import "$tmp/cert.p12" -k "$keychain" -P "$pass" \
+    -T /usr/bin/codesign -T /usr/bin/security >/dev/null; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  # Trust for code signing (may prompt once). Then shred the temp key material.
+  security add-trusted-cert -d -r trustRoot -p codeSign -k "$keychain" "$tmp/cert.pem" >/dev/null 2>&1 || true
   security set-key-partition-list -S "apple-tool:,apple:,codesign:" -s -k "" "$keychain" >/dev/null 2>&1 || true
+  unset pass
+  rm -rf "$tmp"
   identity_exists "$LOCAL_IDENTITY"
 }
 
@@ -172,14 +185,6 @@ sign_app() {
   if identity="$(resolve_identity)" && try_codesign "$identity"; then
     echo "• signed with $(describe_identity "$identity")"
     return 0
-  fi
-  if ! in_ci; then
-    if identity_exists "$LOCAL_IDENTITY" || create_local_identity; then
-      if try_codesign "$LOCAL_IDENTITY"; then
-        echo "• signed with ${LOCAL_IDENTITY}"
-        return 0
-      fi
-    fi
   fi
   echo "• no usable local signing identity; ad-hoc signature"
   codesign --force --deep --sign - "$OUT" >/dev/null
