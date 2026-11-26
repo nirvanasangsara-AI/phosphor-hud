@@ -67,22 +67,25 @@ identity_exists() {
   return 1
 }
 
+# Interactive builds may use Apple Development / Developer ID (may prompt once).
+# Unattended builds prefer "Phosphor Local", whose keychain ACL we control.
+is_interactive() { [[ -t 0 && -t 1 ]]; }
+
 pick_existing_identity() {
-  local name
-  local -a preferred=()
-  local -a apple_dev=()
-  local -a rest=()
+  local name local_name="" dev_id="" apple_dev=""
   while IFS= read -r name; do
     [[ -z "$name" || "$name" == "-" ]] && continue
     case "$name" in
-      "Developer ID Application:"*) preferred+=("$name") ;;
-      "Apple Development:"*) apple_dev+=("$name") ;;
-      "$LOCAL_IDENTITY") preferred+=("$name") ;;
-      *) rest+=("$name") ;;
+      "$LOCAL_IDENTITY") local_name="$name" ;;
+      "Developer ID Application:"*) [[ -z "$dev_id" ]] && dev_id="$name" ;;
+      "Apple Development:"*) [[ -z "$apple_dev" ]] && apple_dev="$name" ;;
     esac
   done < <(codesigning_identities)
-  if ((${#preferred[@]})); then echo "${preferred[0]}"; return 0; fi
-  if ((${#apple_dev[@]})); then echo "${apple_dev[0]}"; return 0; fi
+  if [[ -n "$local_name" ]]; then echo "$local_name"; return 0; fi
+  if is_interactive; then
+    if [[ -n "$dev_id" ]]; then echo "$dev_id"; return 0; fi
+    if [[ -n "$apple_dev" ]]; then echo "$apple_dev"; return 0; fi
+  fi
   return 1
 }
 
@@ -112,6 +115,35 @@ create_local_identity() {
   identity_exists "$LOCAL_IDENTITY"
 }
 
+# Print an identity for logs without leaking an Apple ID email.
+describe_identity() {
+  echo "$1" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[apple-id]/g'
+}
+
+# codesign can block on a Keychain "Allow" prompt. Fail after a short wait so
+# the script can fall back to a local identity or an ad-hoc signature.
+try_codesign() {
+  local identity="$1"
+  local log rc=0
+  log="$(mktemp "${TMPDIR:-/tmp}/phosphor-codesign.XXXXXX")"
+  codesign --force --deep --sign "$identity" "$OUT" >"$log" 2>&1 &
+  local pid=$!
+  local i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    if (( i > 25 )); then
+      kill "$pid" 2>/dev/null || true
+      wait "$pid" 2>/dev/null || true
+      rm -f "$log"
+      return 1
+    fi
+    sleep 1
+  done
+  wait "$pid" || rc=$?
+  rm -f "$log"
+  return "$rc"
+}
+
 resolve_identity() {
   if [[ -n "${PHOSPHOR_SIGN_IDENTITY:-}" ]]; then
     if identity_exists "$PHOSPHOR_SIGN_IDENTITY"; then
@@ -135,13 +167,25 @@ resolve_identity() {
   return 1
 }
 
-if IDENTITY="$(resolve_identity)"; then
-  echo "• signing with ${IDENTITY}"
-  codesign --force --deep --sign "$IDENTITY" "$OUT" >/dev/null
-else
-  echo "• no local signing identity; ad-hoc signature"
+sign_app() {
+  local identity
+  if identity="$(resolve_identity)" && try_codesign "$identity"; then
+    echo "• signed with $(describe_identity "$identity")"
+    return 0
+  fi
+  if ! in_ci; then
+    if identity_exists "$LOCAL_IDENTITY" || create_local_identity; then
+      if try_codesign "$LOCAL_IDENTITY"; then
+        echo "• signed with ${LOCAL_IDENTITY}"
+        return 0
+      fi
+    fi
+  fi
+  echo "• no usable local signing identity; ad-hoc signature"
   codesign --force --deep --sign - "$OUT" >/dev/null
-fi
+}
+
+sign_app
 
 echo "✓ built $OUT"
 
