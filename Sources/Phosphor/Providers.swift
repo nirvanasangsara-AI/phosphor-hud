@@ -1,4 +1,5 @@
 import Foundation
+import PhosphorCore
 
 /// A source produces snapshots for one or more providers.
 /// Codex and Grok access tokens are refreshed through each CLI's official
@@ -113,9 +114,14 @@ actor ClaudeSource: UsageSource {
     }
 
     /// Marks the "token waiting for Claude Code to refresh it" state, so the store can fill in log usage.
-    static let waitingMarker = "토큰 갱신 대기 · 로컬 로그 유지"
+    /// Stable English token — display copy is localized in the HUD, not stored here.
+    static let waitingMarker = "token-refresh-waiting"
+    static let waitingMarkerLegacy = "토큰 갱신 대기 · 로컬 로그 유지"
+    static func isWaiting(_ message: String) -> Bool {
+        L10n.isTokenWaitMarker(message) || message.hasPrefix(waitingMarkerLegacy)
+    }
     static func waiting(since exp: Date) -> String {
-        "\(waitingMarker) · Waiting for token refresh · local logs active (expired \(Fmt.clock(exp)))"
+        "\(waitingMarker) expired \(Int(exp.timeIntervalSince1970))"
     }
 
     private func credentials() async throws -> (String, String?, Date?) {

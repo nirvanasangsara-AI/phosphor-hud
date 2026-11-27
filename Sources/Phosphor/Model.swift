@@ -358,6 +358,10 @@ final class Prefs: ObservableObject {
     @Published var hudUserSized: Bool { didSet { d.set(hudUserSized, forKey: "hudUserSized") } }
     @Published var hudWidth: Double { didSet { d.set(hudWidth, forKey: "hudWidth") } }
     @Published var hudHeight: Double { didSet { d.set(hudHeight, forKey: "hudHeight") } }
+    /// English by default. "korean" or "system" (follow macOS) are chosen in the Language menu.
+    @Published var language: String { didSet { d.set(language, forKey: "language") } }
+
+    var appLanguage: AppLanguage { AppLanguage(rawValue: language) ?? .english }
 
     private init() {
         theme = d.string(forKey: "theme") ?? "clean"
@@ -377,6 +381,7 @@ final class Prefs: ObservableObject {
         hudUserSized = d.bool(forKey: "hudUserSized")
         hudWidth = d.object(forKey: "hudWidth") as? Double ?? 0
         hudHeight = d.object(forKey: "hudHeight") as? Double ?? 0
+        language = d.string(forKey: "language") ?? AppLanguage.english.rawValue
     }
 
     func hideProvider(_ id: String) {

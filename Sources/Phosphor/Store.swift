@@ -256,13 +256,13 @@ final class UsageStore: ObservableObject {
             if !windows.contains(where: { $0.label == "7D EST" || $0.label == "7D API" }) {
                 if week.cost > 0 {
                     var m = UsageWindow.meter("7D EST", used: week.cost, unit: "usd")
-                    m.detail = "API-equivalent from local logs"
+                    m.detail = "l10n:logs.apiEquivalent"
                     m.sparkline = series(true)
                     windows.append(m)
                 } else if !windows.contains(where: { $0.label == "7D TOK" }) {
                     var m = UsageWindow.meter("7D TOK", used: Double(week.tokens), unit: "tokens")
                     if week.unpricedTokens > 0 {
-                        m.detail = "\(Fmt.compact(Double(week.unpricedTokens))) tokens unpriced"
+                        m.detail = "unpriced:\(Fmt.compact(Double(week.unpricedTokens)))"
                     }
                     m.sparkline = series(false)
                     windows.append(m)
@@ -292,7 +292,7 @@ final class UsageStore: ObservableObject {
     /// show today's and this week's tokens from Claude Code's own logs (plan from its account cache).
     private func claudeFallback(_ s: ProviderSnapshot) -> ProviderSnapshot {
         guard s.id == "claude" || s.id.hasPrefix("claude@"),
-              case .idle(let m, _) = s.state, m.hasPrefix(ClaudeSource.waitingMarker) else { return s }
+              case .idle(let m, _) = s.state, ClaudeSource.isWaiting(m) else { return s }
         let plan = accounts[s.id]?.plan ?? snapshots.first { $0.id == s.id }?.plan
         claudeWaiting = m
         // Keep the bars: the last live 5H / 7D reading, clearly marked as cached.
@@ -306,7 +306,7 @@ final class UsageStore: ObservableObject {
                 w.forecast = history.forecast(provider: s.id, window: w, now: Date())
                 return w
             }
-            note = "cached \(Fmt.clock(last.at)) · 토큰 갱신 대기 · 로컬 로그 유지"
+            note = "cached:\(Int(last.at.timeIntervalSince1970))"
         }
         if s.id == "claude", let w = logs.snapshot.week["claude"], w.tokens > 0 {
             windows.append(.meter("TODAY", used: Double(logs.snapshot.today["claude"]?.tokens ?? 0), unit: "tokens"))
@@ -315,7 +315,7 @@ final class UsageStore: ObservableObject {
             } else {
                 windows.append(.meter("7D TOK", used: Double(w.tokens), unit: "tokens"))
             }
-            note = note ?? "from local logs · 토큰 갱신 대기 · 로컬 로그 유지"
+            note = note ?? "logs"
         }
         guard !windows.isEmpty else { return ProviderSnapshot(info: s.info, state: .idle(m, plan: plan), updatedAt: s.updatedAt) }
         var out = ProviderSnapshot(info: s.info, state: .ok(windows: windows, plan: plan), updatedAt: s.updatedAt)
@@ -484,7 +484,7 @@ final class UsageStore: ObservableObject {
             if let (s, w, f) = online.flatMap({ s in s.windows.compactMap { w in w.forecast.map { (s, w, $0) } } })
                 .filter({ $0.2.warnsBeforeReset }).min(by: { ($0.2.hitsLimitAt ?? .distantFuture) < ($1.2.hitsLimitAt ?? .distantFuture) }),
                let hits = f.hitsLimitAt {
-                say("\(s.info.name) \(w.label) runs dry at \(Fmt.clock(hits, now: now))", .warn, at: now)
+                say(T.t("log.runsDry", s.info.name, w.label, T.clock(hits, now: now)), .warn, at: now)
             }
             return
         }
@@ -512,7 +512,7 @@ final class UsageStore: ObservableObject {
                     say("\(name) \(w.label) is at \(Int(w.usedPercent))% · low HP", .danger, at: now)
                 } else if let f = w.forecast, f.warnsBeforeReset, pw.forecast?.warnsBeforeReset != true,
                           let hits = f.hitsLimitAt {
-                    say("\(name) \(w.label) runs dry at \(Fmt.clock(hits, now: now))", .warn, at: now)
+                    say(T.t("log.runsDry", name, w.label, T.clock(hits, now: now)), .warn, at: now)
                 }
             }
         }

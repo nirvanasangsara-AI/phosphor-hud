@@ -83,6 +83,7 @@ struct RootView: View {
                 if prefs.showChart { UsageChartView(logs: store.logs, theme: theme) }
             }
         }
+        .id(prefs.language)   // redraw burn-rate lines and menus when the language changes
         .modifier(Glow(theme: theme))
         .padding(14)
         .frame(width: panelWidth(theme, count: items.count), alignment: .leading)
@@ -208,7 +209,7 @@ struct ProviderRow: View {
             }
         }
         .contextMenu {
-            Button("숨기기 — Hide") { Prefs.shared.hideProvider(snap.id) }
+            Button(T.t("hide.button")) { Prefs.shared.hideProvider(snap.id) }
         }
         .overlay(alignment: .topTrailing) {
             if hover.inside {
@@ -219,7 +220,7 @@ struct ProviderRow: View {
                         .padding(2)
                 }
                 .buttonStyle(.plain)
-                .help("숨기기 — hide this service (restore from 숨긴 서비스 보기)")
+                .help(T.t("hide.help"))
             }
         }
     }
@@ -254,7 +255,7 @@ struct ProviderRow: View {
             statusDot
             Spacer(minLength: 4)
             if case .idle = snap.state {
-                Text(theme.name("signed in")).font(theme.font(10)).foregroundStyle(theme.dim)
+                Text(theme.name(T.t("status.signedIn"))).font(theme.font(10)).foregroundStyle(theme.dim)
             } else if snap.windows.isEmpty {
                 Text(theme.name("off")).font(theme.font(10)).foregroundStyle(theme.dim)
             }
@@ -298,8 +299,8 @@ struct ProviderRow: View {
                         .opacity(snap.staleNote != nil && w.gauged ? 0.6 : 1)
                 }
                 if let cached = snap.staleNote {
-                    Text(theme.name("◷ " + cached)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
-                        .help("토큰 갱신 대기 · 로컬 로그 유지 / Waiting for token refresh · local logs active. Claude Code renews its own token the next time it runs; Phosphor does not write that Keychain item. These bars are the last live reading or local log usage.")
+                    Text(theme.name("◷ " + T.stale(cached, now: now))).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
+                        .help(T.t("stale.help"))
                 }
                 ForEach(creditLines, id: \.self) { c in
                     Text(theme.name("↻ \(c.title) \(c.amount)" + (c.expires.map { " · until \(Fmt.shortDate($0))" } ?? "")))
@@ -307,7 +308,7 @@ struct ProviderRow: View {
                 }
             case .idle(let m, _):
                 // Signed in and fine: nothing to fix, so no Connect button.
-                Text(theme.name(m)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
+                Text(theme.name(ClaudeSource.isWaiting(m) ? T.t("stale.logs") : m)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
             case .error(let m), .unavailable(let m):
                 HStack(spacing: 8) {
                     if let note {
@@ -350,6 +351,7 @@ struct WindowLine: View {
     let tint: Color
     let now: Date
     var labelWidth: CGFloat = 34
+    @ObservedObject private var prefs = Prefs.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -380,7 +382,7 @@ struct WindowLine: View {
                     UsageSparkline(values: w.sparkline.isEmpty ? [w.gauged ? w.usedPercent : 0] : w.sparkline,
                                    tint: tint)
                 }
-                Text(Fmt.countdown(to: w.resetsAt, now: now))
+                Text(T.countdown(to: w.resetsAt, now: now))
                     .font(theme.font(10))
                     .monospacedDigit()
                     .foregroundStyle(theme.dim)
@@ -394,7 +396,7 @@ struct WindowLine: View {
                 TagRow(tags: w.tags, theme: theme, tint: tint)
                     .padding(.leading, labelWidth + 8)
             } else if let detail = w.detail, !detail.isEmpty {
-                Text(theme.name(detail)).font(theme.font(9)).foregroundStyle(theme.dim)
+                Text(theme.name(T.detail(detail))).font(theme.font(9)).foregroundStyle(theme.dim)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, labelWidth + 8)
             }
@@ -411,6 +413,7 @@ struct ForecastLine: View {
     let f: Forecast
     let theme: Theme
     let now: Date
+    @ObservedObject private var prefs = Prefs.shared
 
     var body: some View {
         HStack(spacing: 4) {
@@ -433,33 +436,33 @@ struct ForecastLine: View {
         switch f.kind {
         case .rate:
             if f.warnsBeforeReset, let hits = f.hitsLimitAt {
-                return "▲ limit \(Fmt.clock(hits, now: now)) · in \(Fmt.countdown(to: hits, now: now))"
+                return T.t("forecast.limit", T.clock(hits, now: now), T.countdown(to: hits, now: now))
             }
             if let r = f.atReset {
-                return "≈ \(Int(r.rounded()))% at reset"
+                return T.t("forecast.atReset", "\(Int(r.rounded()))")
             }
-            return "+\(rateValue)%/h"
+            return T.t("forecast.rateOnly", rateValue)
         case .steady:
             if let r = f.atReset {
-                return "steady · ≈ \(Int(r.rounded()))% at reset"
+                return T.t("forecast.steadyAtReset", "\(Int(r.rounded()))")
             }
-            return "steady"
+            return T.t("forecast.steady")
         case .measuring:
-            return "measuring pace"
+            return T.t("forecast.measuring")
         case .limitReached:
             if let r = f.resetsAt, r > now {
-                return "▲ limit reached · in \(Fmt.countdown(to: r, now: now))"
+                return T.t("forecast.limitReachedIn", T.countdown(to: r, now: now))
             }
-            return "▲ limit reached"
+            return T.t("forecast.limitReached")
         case .noSession:
-            return "no active session"
+            return T.t("forecast.noSession")
         }
     }
 
     private var rate: String? {
         switch f.kind {
-        case .rate: return "+\(rateValue)%/h"
-        case .steady, .measuring: return "0%/h"
+        case .rate: return T.t("forecast.rate", rateValue)
+        case .steady, .measuring: return T.t("forecast.rateIdle")
         case .limitReached, .noSession: return nil
         }
     }
@@ -546,11 +549,10 @@ struct UsageBar: View {
 
     static func paceHelp(used: Double, pace: Double) -> String {
         let diff = Int((used - pace).rounded())
-        let verdict = diff > 2 ? "\(diff) points ahead of pace — you're burning fast."
-            : diff < -2 ? "\(-diff) points under pace — you have room."
-            : "Right on pace."
-        return "Pace marker: spreading usage evenly over this window, you'd be at \(Int(pace.rounded()))% by now. "
-            + "You're at \(Int(used.rounded()))%. \(verdict)"
+        let verdict = diff > 2 ? T.t("pace.ahead", "\(diff)")
+            : diff < -2 ? T.t("pace.under", "\(-diff)")
+            : T.t("pace.on")
+        return T.t("pace.help", "\(Int(pace.rounded()))", "\(Int(used.rounded()))", verdict)
     }
 }
 
@@ -675,7 +677,7 @@ struct RaidFrame: View {
                 HStack {
                     status(revive: revive != nil || recentlyRevived(t))
                     Spacer()
-                    Text(Fmt.countdown(to: primary?.resetsAt, now: now))
+                    Text(T.countdown(to: primary?.resetsAt, now: now))
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(theme.dim)
                 }
@@ -715,12 +717,12 @@ struct RaidFrame: View {
             guard online else {
                 // Connected but nothing with a limit: show the reading, not "Offline".
                 if let w = snap.windows.first, let t = w.amountText { return ("\(w.label) \(t)", theme.dim) }
-                if case .idle = snap.state { return ("Signed in", theme.dim) }
+                if case .idle = snap.state { return (T.t("raid.signedIn"), theme.dim) }
                 return ("Offline", theme.dim)
             }
             if revive { return ("Resurrected", Color(hex: "#FFD966")) }
             if snap.windows.contains(where: { $0.usedPercent >= 95 }) { return ("Exhausted", theme.danger) }
-            if let f = doom, let hits = f.hitsLimitAt { return ("Out by \(Fmt.clock(hits, now: now))", theme.warn) }
+            if let f = doom, let hits = f.hitsLimitAt { return (T.t("raid.outBy", T.clock(hits, now: now)), theme.warn) }
             if snap.windows.allSatisfy({ $0.usedPercent < 10 }) { return ("Rested", theme.hpHigh) }
             return (snap.plan ?? "", theme.dim)
         }()
@@ -1070,8 +1072,8 @@ struct UsageSparkline: View {
             ctx.stroke(line, with: .color(tint.opacity(0.95)), lineWidth: 1.15)
         }
         .frame(width: 52, height: 16)
-        .help("Last 7 days")
-        .accessibilityLabel("Weekly trend")
+        .help(T.t("sparkline.help"))
+        .accessibilityLabel(T.t("sparkline.access"))
     }
 }
 
@@ -1123,13 +1125,13 @@ struct HiddenServicesButton: View {
             HStack(spacing: 3) {
                 Image(systemName: "eye.slash")
                     .font(.system(size: 9, weight: .semibold))
-                Text(theme.name("숨긴 서비스 \(prefs.hidden.count)"))
+                Text(theme.name(T.t("hidden.count", "\(prefs.hidden.count)")))
                     .font(theme.font(9, .medium))
             }
             .foregroundStyle(theme.dim)
         }
         .buttonStyle(.plain)
-        .help("숨긴 서비스 보기 — show hidden providers and turn any of them back on")
+        .help(T.t("hidden.help"))
         .popover(isPresented: $pop.on, arrowEdge: .bottom) {
             HiddenServicesList(theme: theme, store: store)
                 .environment(\.colorScheme, .dark)
@@ -1145,8 +1147,8 @@ struct HiddenServicesList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("표시할 서비스").font(.system(size: 12, weight: .semibold))
-            Text("Hidden providers are left out of the HUD, the menu-bar % and the monthly total. Turn any of them back on here.")
+            Text(T.t("hidden.title")).font(.system(size: 12, weight: .semibold))
+            Text(T.t("hidden.body"))
                 .font(.system(size: 10)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             let ids = (store.snapshots.map(\.id) + prefs.hidden.sorted()).uniqued()
@@ -1161,7 +1163,7 @@ struct HiddenServicesList: View {
                             .foregroundStyle(on ? theme.tint(ProviderInfo.lookup(id)) : .secondary)
                         Text(name).foregroundStyle(.primary)
                         Spacer()
-                        if !on { Text("숨김").font(.system(size: 10)).foregroundStyle(.secondary) }
+                        if !on { Text(T.t("hidden.badge")).font(.system(size: 10)).foregroundStyle(.secondary) }
                     }
                 }
                 .buttonStyle(.plain)

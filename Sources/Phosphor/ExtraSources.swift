@@ -111,10 +111,10 @@ struct OllamaSource: UsageSource {
             let loadedRows = (ps["models"] as? [[String: Any]]) ?? []
             let vram = loadedRows.compactMap { num($0["size_vram"]) }.reduce(0, +)
             var inst = UsageWindow.meter("INSTALLED", used: Double(installed.count), unit: "models")
-            inst.detail = "설치됨 · models on disk"
+            inst.detail = "l10n:ollama.installed"
             inst.tags = installed
             var run = UsageWindow.meter("LOADED", used: Double(loaded.count), unit: "in RAM")
-            run.detail = "실행 중 · currently loaded in memory"
+            run.detail = "l10n:ollama.loaded"
             run.tags = loaded
             var w: [UsageWindow] = [inst, run]
             if vram > 0 { w.append(.meter("VRAM", used: vram / 1_073_741_824, unit: "GB")) }
