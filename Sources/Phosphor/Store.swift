@@ -157,7 +157,7 @@ final class UsageStore: ObservableObject {
     }
 
     private func applyLoadedSnapshots(_ loaded: [ProviderSnapshot]) {
-        let annotated = history.annotate(loaded)
+        let annotated = decorate(history.annotate(loaded))
         narrate(annotated)
         snapshots = sorted(annotated)
         lastRefresh = Date()
@@ -220,24 +220,93 @@ final class UsageStore: ObservableObject {
         snapshots = sorted(snapshots)
     }
 
+    /// Attach API-equivalent spend from local logs (Codex / Claude / Gemini) and weekly sparklines.
+    private func decorate(_ snaps: [ProviderSnapshot]) -> [ProviderSnapshot] {
+        snaps.map { s in
+            var s = attachLogSpend(s)
+            guard case .ok(var windows, let plan) = s.state else { return s }
+            windows = windows.map { w in
+                var w = w
+                if w.sparkline.isEmpty, w.isWeekly {
+                    let hist = history.sparkline(provider: s.id, window: w.label)
+                    if !hist.isEmpty { w.sparkline = hist }
+                    else if w.gauged { w.sparkline = [w.usedPercent] }
+                }
+                return w
+            }
+            s.state = .ok(windows: windows, plan: plan)
+            return s
+        }
+    }
+
+    private func logSourceKey(_ id: String) -> String? {
+        if id == "claude" || id.hasPrefix("claude@") { return "claude" }
+        if id == "codex" || id.hasPrefix("codex@") { return "codex" }
+        if id == "gemini" || id.hasPrefix("gemini@") { return "gemini" }
+        return nil
+    }
+
+    /// Show 7-day API-equivalent $ on the row itself whenever local logs have priced usage.
+    private func attachLogSpend(_ s: ProviderSnapshot) -> ProviderSnapshot {
+        guard let key = logSourceKey(s.id), let week = logs.snapshot.week[key], week.tokens > 0 else { return s }
+        func series(_ cost: Bool) -> [Double] {
+            logs.sparkline(source: key, days: 7, cost: cost)
+        }
+        func appendMeters(_ windows: inout [UsageWindow]) {
+            if !windows.contains(where: { $0.label == "7D EST" || $0.label == "7D API" }) {
+                if week.cost > 0 {
+                    var m = UsageWindow.meter("7D EST", used: week.cost, unit: "usd")
+                    m.detail = "l10n:logs.apiEquivalent"
+                    m.sparkline = series(true)
+                    windows.append(m)
+                } else if !windows.contains(where: { $0.label == "7D TOK" }) {
+                    var m = UsageWindow.meter("7D TOK", used: Double(week.tokens), unit: "tokens")
+                    if week.unpricedTokens > 0 {
+                        m.detail = "unpriced:\(Fmt.compact(Double(week.unpricedTokens)))"
+                    }
+                    m.sparkline = series(false)
+                    windows.append(m)
+                }
+            }
+        }
+        switch s.state {
+        case .ok(var windows, let plan):
+            appendMeters(&windows)
+            var out = s
+            out.state = .ok(windows: windows, plan: plan)
+            return out
+        case .idle(let m, let plan):
+            var windows: [UsageWindow] = []
+            appendMeters(&windows)
+            guard !windows.isEmpty else { return s }
+            var out = s
+            out.state = .ok(windows: windows, plan: plan)
+            out.staleNote = m
+            return out
+        default:
+            return s
+        }
+    }
+
     /// Claude Code's token is waiting for Claude Code to refresh it: instead of a Connect prompt,
     /// show today's and this week's tokens from Claude Code's own logs (plan from its account cache).
     private func claudeFallback(_ s: ProviderSnapshot) -> ProviderSnapshot {
         guard s.id == "claude" || s.id.hasPrefix("claude@"),
-              case .idle(let m, _) = s.state, m.hasPrefix(ClaudeSource.waitingMarker) else { return s }
+              case .idle(let m, _) = s.state, ClaudeSource.isWaiting(m) else { return s }
         let plan = accounts[s.id]?.plan ?? snapshots.first { $0.id == s.id }?.plan
         claudeWaiting = m
         // Keep the bars: the last live 5H / 7D reading, clearly marked as cached.
         var windows: [UsageWindow] = []
         var note: String?
         if let last = history.lastKnown(s.id), !last.windows.isEmpty {
-            // Burn rate and run-out time as they stood at that reading (dropped once that time has passed).
+            // Always attach a forecast line (rate, measuring, steady, or no session) so the row
+            // never goes blank while the token is waiting to refresh.
             windows = last.windows.map { w in
                 var w = w
-                if let f = history.forecast(provider: s.id, window: w, now: last.at), f.hitsLimitAt > Date() { w.forecast = f }
+                w.forecast = history.forecast(provider: s.id, window: w, now: Date())
                 return w
             }
-            note = "cached \(Fmt.clock(last.at)) · live again when Claude Code runs"
+            note = "cached:\(Int(last.at.timeIntervalSince1970))"
         }
         if s.id == "claude", let w = logs.snapshot.week["claude"], w.tokens > 0 {
             windows.append(.meter("TODAY", used: Double(logs.snapshot.today["claude"]?.tokens ?? 0), unit: "tokens"))
@@ -246,7 +315,7 @@ final class UsageStore: ObservableObject {
             } else {
                 windows.append(.meter("7D TOK", used: Double(w.tokens), unit: "tokens"))
             }
-            note = note ?? "from local logs · live limits when Claude Code runs"
+            note = note ?? "logs"
         }
         guard !windows.isEmpty else { return ProviderSnapshot(info: s.info, state: .idle(m, plan: plan), updatedAt: s.updatedAt) }
         var out = ProviderSnapshot(info: s.info, state: .ok(windows: windows, plan: plan), updatedAt: s.updatedAt)
@@ -413,8 +482,9 @@ final class UsageStore: ObservableObject {
         guard !previous.isEmpty else {
             say("Raid assembled · \(online.count) online", .info, at: now)
             if let (s, w, f) = online.flatMap({ s in s.windows.compactMap { w in w.forecast.map { (s, w, $0) } } })
-                .filter({ $0.2.beforeReset }).min(by: { $0.2.hitsLimitAt < $1.2.hitsLimitAt }) {
-                say("\(s.info.name) \(w.label) runs dry at \(Fmt.clock(f.hitsLimitAt, now: now))", .warn, at: now)
+                .filter({ $0.2.warnsBeforeReset }).min(by: { ($0.2.hitsLimitAt ?? .distantFuture) < ($1.2.hitsLimitAt ?? .distantFuture) }),
+               let hits = f.hitsLimitAt {
+                say(T.t("log.runsDry", s.info.name, w.label, T.clock(hits, now: now)), .warn, at: now)
             }
             return
         }
@@ -440,8 +510,9 @@ final class UsageStore: ObservableObject {
                     say("\(name) is Exhausted · \(w.label) at \(Int(w.usedPercent))%", .danger, at: now)
                 } else if pw.usedPercent < 90, w.usedPercent >= 90 {
                     say("\(name) \(w.label) is at \(Int(w.usedPercent))% · low HP", .danger, at: now)
-                } else if let f = w.forecast, f.beforeReset, pw.forecast?.beforeReset != true {
-                    say("\(name) \(w.label) runs dry at \(Fmt.clock(f.hitsLimitAt, now: now))", .warn, at: now)
+                } else if let f = w.forecast, f.warnsBeforeReset, pw.forecast?.warnsBeforeReset != true,
+                          let hits = f.hitsLimitAt {
+                    say(T.t("log.runsDry", name, w.label, T.clock(hits, now: now)), .warn, at: now)
                 }
             }
         }

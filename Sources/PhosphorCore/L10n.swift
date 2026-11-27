@@ -1,0 +1,332 @@
+import Foundation
+
+/// In-app language preference. English is the default; "system" follows macOS preferred languages.
+public enum AppLanguage: String, CaseIterable, Sendable {
+    case english
+    case korean
+    case system
+
+    /// Resolve to a concrete language. "system" becomes Korean when a `ko` locale is preferred, otherwise English.
+    public func resolve(preferredLanguages: [String] = Locale.preferredLanguages) -> ResolvedLanguage {
+        switch self {
+        case .english: return .english
+        case .korean: return .korean
+        case .system:
+            // First preferred language wins, matching macOS's primary locale.
+            if let first = preferredLanguages.first, first.lowercased().hasPrefix("ko") { return .korean }
+            return .english
+        }
+    }
+}
+
+public enum ResolvedLanguage: String, Sendable {
+    case english
+    case korean
+
+    var locale: Locale {
+        switch self {
+        case .english: return Locale(identifier: "en_US")
+        case .korean: return Locale(identifier: "ko_KR")
+        }
+    }
+}
+
+/// UI copy for menus, settings, and burn-rate / depletion descriptions. Placeholders are `{0}`, `{1}`, …
+public enum L10n {
+    public static func text(_ key: String, language: AppLanguage, preferredLanguages: [String] = Locale.preferredLanguages,
+                            _ args: String...) -> String {
+        text(key, language: language, preferredLanguages: preferredLanguages, args)
+    }
+
+    public static func text(_ key: String, language: AppLanguage, preferredLanguages: [String] = Locale.preferredLanguages,
+                            _ args: [String]) -> String {
+        text(key, resolved: language.resolve(preferredLanguages: preferredLanguages), args)
+    }
+
+    public static func text(_ key: String, resolved: ResolvedLanguage, _ args: [String] = []) -> String {
+        var s = table[resolved]?[key] ?? table[.english]?[key] ?? key
+        for (i, a) in args.enumerated() {
+            s = s.replacingOccurrences(of: "{\(i)}", with: a)
+        }
+        return s
+    }
+
+    public static func clock(_ date: Date, now: Date = Date(), language: AppLanguage,
+                             preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        clock(date, now: now, resolved: language.resolve(preferredLanguages: preferredLanguages))
+    }
+
+    public static func clock(_ date: Date, now: Date = Date(), resolved: ResolvedLanguage) -> String {
+        let f = DateFormatter()
+        f.locale = resolved.locale
+        f.dateFormat = Calendar.current.isDate(date, inSameDayAs: now) ? "HH:mm" : "EEE HH:mm"
+        return f.string(from: date)
+    }
+
+    public static func countdown(to date: Date?, now: Date = Date(), language: AppLanguage,
+                                 preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        countdown(to: date, now: now, resolved: language.resolve(preferredLanguages: preferredLanguages))
+    }
+
+    public static func countdown(to date: Date?, now: Date = Date(), resolved: ResolvedLanguage) -> String {
+        guard let date else { return "" }
+        let s = Int(date.timeIntervalSince(now))
+        if s <= 0 { return text("time.now", resolved: resolved) }
+        let d = s / 86400, h = (s % 86400) / 3600, m = (s % 3600) / 60
+        if d > 0 { return text("time.daysHours", resolved: resolved, ["\(d)", "\(h)"]) }
+        if h > 0 { return text("time.hoursMinutes", resolved: resolved, ["\(h)", "\(m)"]) }
+        return text("time.minutes", resolved: resolved, ["\(m)"])
+    }
+
+    public static func displayDetail(_ raw: String, language: AppLanguage,
+                                     preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        let resolved = language.resolve(preferredLanguages: preferredLanguages)
+        if raw.hasPrefix("l10n:"), let key = raw.split(separator: ":", maxSplits: 1).last {
+            return text(String(key), resolved: resolved)
+        }
+        if raw.hasPrefix("unpriced:") {
+            return text("logs.unpriced", resolved: resolved, [String(raw.dropFirst(9))])
+        }
+        return raw
+    }
+
+    /// True when the English and Korean tables define the same keys.
+    public static var tablesMatch: Bool { Set(en.keys) == Set(ko.keys) }
+
+    /// Language-agnostic token-wait marker, plus the pre-localization Korean prefix.
+    public static func isTokenWaitMarker(_ message: String) -> Bool {
+        message.hasPrefix("token-refresh-waiting") || message.hasPrefix("토큰 갱신 대기")
+    }
+
+    public static func staleText(_ raw: String, now: Date = Date(), language: AppLanguage,
+                                 preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        let resolved = language.resolve(preferredLanguages: preferredLanguages)
+        if raw.hasPrefix("cached:"), let t = TimeInterval(raw.dropFirst(7)) {
+            return text("stale.cached", resolved: resolved, [clock(Date(timeIntervalSince1970: t), now: now, resolved: resolved)])
+        }
+        if raw == "logs" { return text("stale.logs", resolved: resolved) }
+        return raw
+    }
+
+    /// Known API credit titles (e.g. Codex "사용량 초기화") shown in the selected language.
+    public static func creditTitle(_ raw: String, language: AppLanguage,
+                                   preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        let resolved = language.resolve(preferredLanguages: preferredLanguages)
+        let n = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let key = creditTitleKeys[n] ?? creditTitleKeys[n.lowercased()] {
+            return text(key, resolved: resolved)
+        }
+        return raw
+    }
+}
+
+private let table: [ResolvedLanguage: [String: String]] = [
+    .english: en,
+    .korean: ko,
+]
+
+/// Aliases used by provider APIs, keyed as stored (or lowercased for Latin titles).
+private let creditTitleKeys: [String: String] = [
+    "사용량 초기화": "credit.usageReset",
+    "usage reset": "credit.usageReset",
+]
+
+private let en: [String: String] = [
+    // Forecast / depletion
+    "forecast.limit": "▲ limit {0} · in {1}",
+    "forecast.atReset": "≈ {0}% at reset",
+    "forecast.rateOnly": "+{0}%/h",
+    "forecast.steadyAtReset": "steady · ≈ {0}% at reset",
+    "forecast.steady": "steady",
+    "forecast.measuring": "measuring pace",
+    "forecast.limitReachedIn": "▲ limit reached · in {0}",
+    "forecast.limitReached": "▲ limit reached",
+    "forecast.noSession": "no active session",
+    "forecast.rate": "+{0}%/h",
+    "forecast.rateIdle": "0%/h",
+    "pace.ahead": "{0} points ahead of pace — you're burning fast.",
+    "pace.under": "{0} points under pace — you have room.",
+    "pace.on": "Right on pace.",
+    "pace.help": "Pace marker: spreading usage evenly over this window, you'd be at {0}% by now. You're at {1}%. {2}",
+    "sparkline.help": "Last 7 days",
+    "sparkline.access": "Weekly trend",
+    "raid.outBy": "Out by {0}",
+    "log.runsDry": "{0} {1} runs dry at {2}",
+    "time.now": "now",
+    "time.daysHours": "{0}d {1}h",
+    "time.hoursMinutes": "{0}h {1}m",
+    "time.minutes": "{0}m",
+
+    // Stale / token wait (display only; internal markers stay English)
+    "stale.cached": "cached {0} · waiting for token refresh · local logs kept",
+    "stale.logs": "from local logs · waiting for token refresh · local logs kept",
+    "stale.help": "Waiting for token refresh · local logs active. Claude Code renews its own token the next time it runs; Phosphor does not write that Keychain item. These bars are the last live reading or local log usage.",
+    "status.signedIn": "signed in",
+    "raid.signedIn": "Signed in",
+
+    // Hide / settings (HUD)
+    "hide.action": "Hide — {0}",
+    "hide.actionNamed": "Hide — {0}",
+    "hide.button": "Hide",
+    "hide.help": "Hide this service (restore from Show hidden services)",
+    "hidden.count": "Hidden services {0}",
+    "hidden.help": "Show hidden services and turn any of them back on",
+    "hidden.title": "Visible services",
+    "hidden.body": "Hidden providers are left out of the HUD, the menu-bar % and the monthly total. Turn any of them back on here.",
+    "hidden.badge": "Hidden",
+    "ollama.installed": "installed · models on disk",
+    "ollama.loaded": "running · currently loaded in memory",
+    "logs.apiEquivalent": "API-equivalent from local logs",
+    "logs.unpriced": "{0} tokens unpriced",
+    "credit.usageReset": "Usage Reset",
+
+    // Menu / settings
+    "menu.hideHUD": "Hide HUD",
+    "menu.showHUD": "Show HUD",
+    "menu.refreshNow": "Refresh now",
+    "menu.theme": "Theme",
+    "menu.openThemes": "Open Themes Folder…",
+    "menu.compact": "Compact",
+    "menu.opacity": "Opacity",
+    "menu.clickThrough": "Click-through (hold ⌥ to move · undo here)",
+    "menu.language": "Language",
+    "lang.english": "English",
+    "lang.korean": "한국어",
+    "lang.system": "System (macOS)",
+    "menu.visibleServices": "Visible services",
+    "menu.resetWindowSize": "Reset window size (auto-fit)",
+    "menu.connect": "Connect {0}…",
+    "menu.installedOnMac": "Installed on this Mac",
+    "menu.notFound": "Not found",
+    "menu.notInstalled": "not installed",
+    "menu.rescan": "Rescan installed tools",
+    "menu.moreProviders": "More Providers ({0} found of {1})",
+    "menu.extraAccounts": "Extra Accounts ({0})",
+    "menu.editAccounts": "Edit accounts.json…",
+    "menu.showUnavailable": "Show not-connected providers",
+    "menu.addCustom": "Add custom provider…",
+    "menu.resetOrder": "Reset Order (drag ≡ on a row to reorder)",
+    "menu.claudeResets": "Read Claude reset credits (uses your Claude login outside Claude Code)",
+    "menu.downloadLogos": "Download Official Logos",
+    "menu.removeLogos": "Remove Downloaded Logos",
+    "menu.providers": "Providers",
+    "menu.chart": "Usage chart (local logs)",
+    "menu.devStats": "GitHub PRs & efficiency (gh, read-only)",
+    "menu.saveReceipt": "Save Monthly Receipt (PNG, copied)",
+    "menu.warnAt": "Warning at {0}%",
+    "menu.criticalAt": "Critical at {0}%",
+    "menu.windowReset": "Window reset (from ≥{0}%)",
+    "menu.billDue": "Bill due ({0} days before)",
+    "menu.billDueOne": "Bill due ({0} day before)",
+    "menu.creditExpiry": "Reset credit expiring ({0} days before)",
+    "menu.editAlerts": "Edit thresholds (alerts.json)…",
+    "menu.notifications": "Notifications",
+    "menu.billingStale": "⚠︎ Billing screens need refresh: {0}",
+    "menu.calendarExport": "Calendar export ({0} events)…",
+    "menu.refreshEvery": "Refresh every",
+    "menu.every1": "1 min",
+    "menu.every3": "3 min",
+    "menu.every5": "5 min",
+    "menu.every10": "10 min",
+    "menu.launchAtLogin": "Launch at login",
+    "menu.quit": "Quit Phosphor",
+    "menu.hideProvider": "Hide — {0}",
+]
+
+private let ko: [String: String] = [
+    "forecast.limit": "▲ 한도 {0} · {1} 후",
+    "forecast.atReset": "리셋 시 ≈ {0}%",
+    "forecast.rateOnly": "+{0}%/h",
+    "forecast.steadyAtReset": "안정 · 리셋 시 ≈ {0}%",
+    "forecast.steady": "안정",
+    "forecast.measuring": "속도 측정 중",
+    "forecast.limitReachedIn": "▲ 한도 도달 · {0} 후",
+    "forecast.limitReached": "▲ 한도 도달",
+    "forecast.noSession": "활성 세션 없음",
+    "forecast.rate": "+{0}%/h",
+    "forecast.rateIdle": "0%/h",
+    "pace.ahead": "고른 속도보다 {0}%p 빨라 소진이 빠릅니다.",
+    "pace.under": "고른 속도보다 {0}%p 여유가 있습니다.",
+    "pace.on": "고른 속도와 비슷합니다.",
+    "pace.help": "페이스 표시: 이 창 동안 고르게 쓰면 지금은 {0}%여야 합니다. 현재 {1}%. {2}",
+    "sparkline.help": "최근 7일",
+    "sparkline.access": "주간 추이",
+    "raid.outBy": "{0}까지 소진",
+    "log.runsDry": "{0} {1} 한도 도달 시각 {2}",
+    "time.now": "지금",
+    "time.daysHours": "{0}일 {1}시간",
+    "time.hoursMinutes": "{0}시간 {1}분",
+    "time.minutes": "{0}분",
+
+    "stale.cached": "캐시 {0} · 토큰 갱신 대기 · 로컬 로그 유지",
+    "stale.logs": "로컬 로그 · 토큰 갱신 대기 · 로컬 로그 유지",
+    "stale.help": "토큰 갱신 대기 · 로컬 로그 유지. Claude Code가 다음에 실행될 때 토큰을 갱신합니다. Phosphor는 해당 키체인 항목을 쓰지 않습니다. 이 막대는 마지막 실시간 값 또는 로컬 로그 사용량입니다.",
+    "status.signedIn": "로그인됨",
+    "raid.signedIn": "로그인됨",
+
+    "hide.action": "숨기기 — {0}",
+    "hide.actionNamed": "숨기기 — {0}",
+    "hide.button": "숨기기",
+    "hide.help": "이 서비스를 숨깁니다 (숨긴 서비스 보기에서 다시 켤 수 있습니다)",
+    "hidden.count": "숨긴 서비스 {0}",
+    "hidden.help": "숨긴 서비스를 보고 다시 켭니다",
+    "hidden.title": "표시할 서비스",
+    "hidden.body": "숨긴 서비스는 HUD, 메뉴 막대 %, 월 합계에서 빠집니다. 여기에서 다시 켤 수 있습니다.",
+    "hidden.badge": "숨김",
+    "ollama.installed": "설치됨 · 디스크의 모델",
+    "ollama.loaded": "실행 중 · 메모리에 로드됨",
+    "logs.apiEquivalent": "로컬 로그 기준 API 환산",
+    "logs.unpriced": "가격 없는 토큰 {0}",
+    "credit.usageReset": "사용량 초기화",
+
+    "menu.hideHUD": "HUD 숨기기",
+    "menu.showHUD": "HUD 보기",
+    "menu.refreshNow": "지금 새로고침",
+    "menu.theme": "테마",
+    "menu.openThemes": "테마 폴더 열기…",
+    "menu.compact": "컴팩트",
+    "menu.opacity": "불투명도",
+    "menu.clickThrough": "클릭 통과 (이동은 ⌥, 해제는 여기)",
+    "menu.language": "언어",
+    "lang.english": "English",
+    "lang.korean": "한국어",
+    "lang.system": "시스템 (macOS)",
+    "menu.visibleServices": "표시할 서비스",
+    "menu.resetWindowSize": "창 크기 재설정 (자동 맞춤)",
+    "menu.connect": "{0}에 연결…",
+    "menu.installedOnMac": "이 Mac에 설치됨",
+    "menu.notFound": "찾을 수 없음",
+    "menu.notInstalled": "설치되지 않음",
+    "menu.rescan": "설치된 도구 다시 검색",
+    "menu.moreProviders": "다른 서비스 ({0} / {1}개 발견)",
+    "menu.extraAccounts": "추가 계정 ({0})",
+    "menu.editAccounts": "accounts.json 편집…",
+    "menu.showUnavailable": "연결되지 않은 서비스 표시",
+    "menu.addCustom": "사용자 지정 서비스 추가…",
+    "menu.resetOrder": "순서 재설정 (≡를 끌어 재정렬)",
+    "menu.claudeResets": "Claude 리셋 크레딧 읽기 (Claude Code 외부 로그인 사용)",
+    "menu.downloadLogos": "공식 로고 다운로드",
+    "menu.removeLogos": "받은 로고 삭제",
+    "menu.providers": "서비스",
+    "menu.chart": "사용량 차트 (로컬 로그)",
+    "menu.devStats": "GitHub PR·효율 (gh, 읽기 전용)",
+    "menu.saveReceipt": "월간 영수증 저장 (PNG, 복사됨)",
+    "menu.warnAt": "경고 {0}%",
+    "menu.criticalAt": "위험 {0}%",
+    "menu.windowReset": "창 리셋 (≥{0}%에서)",
+    "menu.billDue": "결제 예정 ({0}일 전)",
+    "menu.billDueOne": "결제 예정 ({0}일 전)",
+    "menu.creditExpiry": "리셋 크레딧 만료 ({0}일 전)",
+    "menu.editAlerts": "임계값 편집 (alerts.json)…",
+    "menu.notifications": "알림",
+    "menu.billingStale": "⚠︎ 결제 화면을 다시 읽어야 합니다: {0}",
+    "menu.calendarExport": "캘린더 보내기 ({0}개)…",
+    "menu.refreshEvery": "새로고침 주기",
+    "menu.every1": "1분",
+    "menu.every3": "3분",
+    "menu.every5": "5분",
+    "menu.every10": "10분",
+    "menu.launchAtLogin": "로그인 시 실행",
+    "menu.quit": "Phosphor 종료",
+    "menu.hideProvider": "숨기기 — {0}",
+]

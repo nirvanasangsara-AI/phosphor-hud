@@ -1,12 +1,5 @@
 import Foundation
-
-/// Burn-rate forecast for one window, from the last 30–60 minutes of samples.
-struct Forecast: Hashable {
-    let hitsLimitAt: Date      // when usage would reach 100% at the current rate
-    let ratePerHour: Double    // percentage points per hour
-    let beforeReset: Bool      // true = you run dry before the window resets
-    let atReset: Double?       // projected usage when the window resets (0...100)
-}
+import PhosphorCore
 
 /// One persisted sample: `{"t":…, "p":"claude", "w":"5H", "u":62, "r":…}`.
 struct UsageSample: Codable {
@@ -21,14 +14,8 @@ struct UsageSample: Codable {
 /// plus the slope math behind "runs out at 14:32".
 @MainActor
 final class History {
-    static let lookback: TimeInterval = 60 * 60      // fit over the last hour…
-    static let minSpan: TimeInterval = 30 * 60       // …but only once we have 30 minutes of data
-    static let minRate = 0.25                        // %/h below this counts as idle
+    /// Lookbacks live on `QuotaForecast`. History only keeps a working buffer of recent samples.
     private static let keepInMemory: TimeInterval = 8 * 3600
-    /// Weekly and longer windows move slowly: fit over 6 hours (at least 1 hour of data) so their
-    /// burn rate shows up instead of drowning in rounding.
-    static let longLookback: TimeInterval = 6 * 3600
-    static let longMinSpan: TimeInterval = 60 * 60
     private static let keepOnDisk: TimeInterval = 30 * 86400
     private static let compactAbove = 4 * 1024 * 1024
 
@@ -36,6 +23,10 @@ final class History {
     private var recent: [String: [UsageSample]] = [:]   // "<provider>|<window>" → samples, oldest first
     /// Newest sample per provider and window, from everything on disk (for cached bars).
     private var latest: [String: [String: UsageSample]] = [:]
+    /// Downsampled (~1 sample/hour) series kept for 14 days, used by weekly sparklines.
+    private var spark: [String: [UsageSample]] = [:]
+    private static let sparkKeep: TimeInterval = 14 * 86400
+    private static let sparkBucket: TimeInterval = 3600
 
     static var file: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -65,7 +56,15 @@ final class History {
     /// Demo mode: replace memory with synthetic samples.
     func seed(_ samples: [UsageSample], now: Date) {
         recent = [:]
+        spark = [:]
+        latest = [:]
         for s in samples.sorted(by: { $0.t < $1.t }) { remember(s, now: now) }
+    }
+
+    /// Used-% (or whatever was recorded) over the last `days` days, oldest first.
+    func sparkline(provider: String, window: String, days: Int = 7, now: Date = Date()) -> [Double] {
+        let cutoff = now.timeIntervalSince1970 - Double(days) * 86_400
+        return (spark["\(provider)|\(window)"] ?? []).filter { $0.t >= cutoff }.map(\.u)
     }
 
     /// The last live reading of `provider`'s gauges, with when it was taken.
@@ -75,7 +74,8 @@ final class History {
         let keep = byWindow.values.filter { newest - $0.t < 600 }.sorted { ($0.w.count, $0.w) < ($1.w.count, $1.w) }
         let windows = keep.map { s in
             UsageWindow(label: s.w, usedPercent: s.u, resetsAt: s.r.map { Date(timeIntervalSince1970: $0) },
-                        windowSeconds: s.w.hasPrefix("5H") ? 18000 : (s.w.hasPrefix("7D") ? 604800 : nil))
+                        windowSeconds: s.w.hasPrefix("5H") ? 18000 : (s.w.hasPrefix("7D") ? 604800 : nil),
+                        activeSession: !(s.w.hasPrefix("5H") && s.u == 0 && s.r == nil))
         }
         return (windows, Date(timeIntervalSince1970: newest))
     }
@@ -88,6 +88,19 @@ final class History {
         let cutoff = now.timeIntervalSince1970 - Self.keepInMemory
         list.removeAll { $0.t < cutoff }
         recent[key] = list
+        rememberSpark(s, now: now, key: key)
+    }
+
+    private func rememberSpark(_ s: UsageSample, now: Date, key: String) {
+        var list = spark[key, default: []]
+        if let last = list.last, s.t - last.t < Self.sparkBucket {
+            list[list.count - 1] = s
+        } else {
+            list.append(s)
+        }
+        let cutoff = now.timeIntervalSince1970 - Self.sparkKeep
+        list.removeAll { $0.t < cutoff }
+        spark[key] = list
     }
 
     // MARK: Forecast
@@ -106,40 +119,13 @@ final class History {
     }
 
     func forecast(provider: String, window w: UsageWindow, now: Date) -> Forecast? {
-        guard w.gauged, w.usedPercent < 100, let all = recent["\(provider)|\(w.label)"] else { return nil }
-        let nowT = now.timeIntervalSince1970
-        let currentReset = w.resetsAt?.timeIntervalSince1970
-
-        // Only samples from this window cycle: same reset time, and nothing before the last drop.
-        var pts: [UsageSample] = []
-        let long = (w.windowSeconds ?? 0) >= 86_400
-        let lookback = long ? Self.longLookback : Self.lookback
-        for s in all where s.t >= nowT - lookback && s.t <= nowT + 1 {
-            if let a = s.r, let b = currentReset, abs(a - b) > 300 { continue }
-            if let last = pts.last, s.u < last.u - 1 { pts = [] }
-            pts.append(s)
+        guard w.gauged else { return nil }
+        let samples = (recent["\(provider)|\(w.label)"] ?? []).map {
+            ForecastSample(t: $0.t, u: $0.u, r: $0.r)
         }
-        guard pts.count >= 3, let first = pts.first, let last = pts.last,
-              last.t - first.t >= (long ? Self.longMinSpan : Self.minSpan) else { return nil }
-
-        // Least-squares slope, % per hour.
-        let xs = pts.map { ($0.t - first.t) / 3600 }, ys = pts.map(\.u)
-        let n = Double(pts.count)
-        let mx = xs.reduce(0, +) / n, my = ys.reduce(0, +) / n
-        var num = 0.0, den = 0.0
-        for (x, y) in zip(xs, ys) { num += (x - mx) * (y - my); den += (x - mx) * (x - mx) }
-        guard den > 0 else { return nil }
-        let rate = num / den
-        guard rate >= Self.minRate else { return nil }
-
-        let hits = now.addingTimeInterval((100 - w.usedPercent) / rate * 3600)
-        var atReset: Double?
-        var before = true
-        if let r = w.resetsAt {
-            before = hits < r
-            atReset = min(100, w.usedPercent + rate * max(0, r.timeIntervalSince(now)) / 3600)
-        }
-        return Forecast(hitsLimitAt: hits, ratePerHour: rate, beforeReset: before, atReset: atReset)
+        return QuotaForecast.make(usedPercent: w.usedPercent, resetsAt: w.resetsAt,
+                                  windowSeconds: w.windowSeconds, activeSession: w.activeSession,
+                                  samples: samples, now: now)
     }
 
     // MARK: Disk
@@ -153,6 +139,9 @@ final class History {
             if let s = try? dec.decode(UsageSample.self, from: Data(line)) { all.append(s) }
         }
         for s in all where (latest[s.p]?[s.w]?.t ?? 0) <= s.t { latest[s.p, default: [:]][s.w] = s }
+        for s in all where s.t >= now.timeIntervalSince1970 - Self.sparkKeep {
+            rememberSpark(s, now: now, key: "\(s.p)|\(s.w)")
+        }
         for s in all where s.t >= now.timeIntervalSince1970 - Self.keepInMemory { remember(s, now: now) }
         if data.count > Self.compactAbove {
             let keep = all.filter { $0.t >= now.timeIntervalSince1970 - Self.keepOnDisk }

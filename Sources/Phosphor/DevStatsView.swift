@@ -44,12 +44,7 @@ struct DevStatsView: View {
             Text("\(c.mergedToday)/\(c.merged7)/\(c.merged30)").foregroundStyle(theme.fg).fontWeight(.semibold)
                 .help("Merged PRs today / last 7 days / last 30 days")
             Spacer(minLength: 2)
-            Text(theme.name(e.placement.label))
-                .font(theme.font(9, .bold))
-                .padding(.horizontal, 6).padding(.vertical, 1)
-                .background(Capsule().fill(theme.fg.opacity(e.placement.tier == "Elite" ? 0.22 : 0.12)))
-                .foregroundStyle(theme.fg)
-                .fixedSize()
+            PlacementBadge(label: theme.name(e.placement.label), elite: e.placement.tier == "Elite", theme: theme)
                 .help("vs \(PRBenchmark.source)")
         }
         .font(theme.font(10)).monospacedDigit().lineLimit(1)
@@ -157,6 +152,82 @@ struct DevStatsDetail: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Efficiency tier badge
+
+/// The "Elite · Top 10%" chip gets a slow warm pulse and halo; other tiers stay quiet.
+/// Animation is skipped when the system Reduce Motion setting is on.
+struct PlacementBadge: View {
+    let label: String
+    let elite: Bool
+    let theme: Theme
+
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    var body: some View {
+        if elite, !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 16)) { ctx in
+                chip(at: ctx.date)
+            }
+        } else {
+            chip(at: nil)
+        }
+    }
+
+    private func chip(at date: Date?) -> some View {
+        let gold = Color(hex: "#F0D48A")
+        let amber = Color(hex: "#E8A34A")
+        // Calm 2.8s breath: 0 = rest, 1 = peak. Static elite uses a mid glow.
+        let breath = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 2.8) } ?? 0.62
+        let shimmer = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 3.6 + 0.7) } ?? 0.35
+        let label = Text(self.label)
+            .font(theme.font(9, .bold))
+            .foregroundStyle(elite ? Color(hex: "#F7E7B4") : theme.fg)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .fixedSize()
+
+        return label
+            .background {
+                if elite {
+                    ZStack {
+                        // Soft halo that breathes — scale lives on the glow, not the text, so the row doesn't jump.
+                        Capsule()
+                            .fill(amber.opacity(0.28 + 0.32 * breath))
+                            .blur(radius: 5 + 2.5 * breath)
+                            .scaleEffect(x: 1.18 + 0.08 * breath, y: 1.55 + 0.20 * breath)
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        gold.opacity(0.30 + 0.16 * breath),
+                                        amber.opacity(0.22 + 0.14 * breath)
+                                    ],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing
+                                )
+                            )
+                        Capsule()
+                            .strokeBorder(
+                                LinearGradient(
+                                    colors: [
+                                        Color.white.opacity(0.25 + 0.35 * shimmer),
+                                        gold.opacity(0.85),
+                                        amber.opacity(0.55)
+                                    ],
+                                    startPoint: UnitPoint(x: -0.2 + shimmer, y: 0),
+                                    endPoint: UnitPoint(x: 0.4 + shimmer, y: 1)
+                                ),
+                                lineWidth: 0.9
+                            )
+                    }
+                } else {
+                    Capsule().fill(theme.fg.opacity(0.12))
+                }
+            }
+            .shadow(color: elite ? gold.opacity(0.35 + 0.45 * breath) : .clear, radius: elite ? (4 + 3.5 * breath) : 0)
+            .shadow(color: elite ? amber.opacity(0.18 + 0.22 * breath) : .clear, radius: elite ? (8 + 4 * breath) : 0)
+            .accessibilityLabel(self.label)
     }
 }
 

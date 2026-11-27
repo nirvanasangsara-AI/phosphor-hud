@@ -171,19 +171,27 @@ enum Accounts {
 
     static func codexInfo() async -> AccountInfo {
         var a = AccountInfo(source: "ChatGPT account (Codex login)")
-        guard let auth = readJSONFile(Paths.home.appendingPathComponent(".codex/auth.json")),
-              let tokens = auth["tokens"] as? [String: Any],
-              let token = tokens["access_token"] as? String else {
+        let home = Paths.home.appendingPathComponent(".codex")
+        let creds: AuthRefresh.Access
+        do { creds = try await AuthRefresh.shared.codexAccess(home: home) }
+        catch {
             a.planNote = "Codex not logged in with ChatGPT"
             return a
         }
-        let account = tokens["account_id"] as? String
+        let account = creds.accountID
         func get(_ path: String) async throws -> [String: Any] {
-            var req = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/" + path)!)
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            if let account { req.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
-            req.setValue("phosphor-hud/0.1", forHTTPHeaderField: "User-Agent")
-            return try await HTTP.json(req)
+            func request(_ access: AuthRefresh.Access) -> URLRequest {
+                var req = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/" + path)!)
+                req.setValue("Bearer \(access.token)", forHTTPHeaderField: "Authorization")
+                if let account = access.accountID { req.setValue(account, forHTTPHeaderField: "ChatGPT-Account-Id") }
+                req.setValue("phosphor-hud/0.2", forHTTPHeaderField: "User-Agent")
+                return req
+            }
+            do { return try await HTTP.json(request(creds)) }
+            catch ProviderError.expired {
+                let fresh = try await AuthRefresh.shared.codexAccess(home: home, force: true)
+                return try await HTTP.json(request(fresh))
+            }
         }
         var planKey: String?
         do {

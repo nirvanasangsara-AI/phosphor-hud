@@ -1,8 +1,10 @@
 import Foundation
+import PhosphorCore
 
 /// A source produces snapshots for one or more providers.
-/// Phosphor never writes or refreshes anyone's credentials: it only reads
-/// tokens that the official CLIs already keep on disk / in the Keychain.
+/// Codex and Grok access tokens are refreshed through each CLI's official
+/// OAuth endpoint and written back to that CLI's auth.json. Claude Code's
+/// Keychain item is only re-read; Phosphor never writes or rotates it.
 protocol UsageSource {
     func fetch() async -> [ProviderSnapshot]
 }
@@ -112,22 +114,28 @@ actor ClaudeSource: UsageSource {
     }
 
     /// Marks the "token waiting for Claude Code to refresh it" state, so the store can fill in log usage.
-    static let waitingMarker = "Waiting for Claude Code"
+    /// Stable English token — display copy is localized in the HUD, not stored here.
+    static let waitingMarker = "token-refresh-waiting"
+    static let waitingMarkerLegacy = "토큰 갱신 대기 · 로컬 로그 유지"
+    static func isWaiting(_ message: String) -> Bool {
+        L10n.isTokenWaitMarker(message) || message.hasPrefix(waitingMarkerLegacy)
+    }
     static func waiting(since exp: Date) -> String {
-        "\(waitingMarker) to refresh its token (expired \(Fmt.clock(exp))); live limits return next time you use Claude Code"
+        "\(waitingMarker) expired \(Int(exp.timeIntervalSince1970))"
     }
 
     private func credentials() async throws -> (String, String?, Date?) {
-        if let c = cached, (c.expires ?? .distantFuture) > Date() { return c }
+        if let c = cached, (c.expires ?? .distantFuture).timeIntervalSinceNow > 60 { return c }
         var blob: [String: Any]?
         // Claude Code has stored its login in several places over time: the file, the
         // "Claude Code-credentials" Keychain item, and newer per-config items with a hash suffix.
         // Take whichever holds a Claude login that expires last (i.e. the freshest one).
+        // Only the well-known service names are queried; never `security dump-keychain`.
         var candidates: [[String: Any]] = []
         let dir = configDir ?? Paths.home.appendingPathComponent(".claude")
         if let f = readJSONFile(dir.appendingPathComponent(".credentials.json")) { candidates.append(f) }
         let services: [String]
-        if let service { services = [service] } else { services = await Self.keychainServices() }
+        if let service { services = [service] } else { services = Self.keychainServices() }
         for service in services {
             if let raw = try? await Shell.run("/usr/bin/security", ["find-generic-password", "-s", service, "-w"]),
                let obj = (try? JSONSerialization.jsonObject(with: Data(raw.utf8))) as? [String: Any] {
@@ -186,17 +194,11 @@ actor ClaudeSource: UsageSource {
         return out
     }
 
-    /// Keychain service names Claude Code uses ("Claude Code-credentials" and "…-<hash>").
-    /// Reads attribute names only; secrets are fetched per item above.
-    static func keychainServices() async -> [String] {
-        let dump = (try? await Shell.run("/usr/bin/security", ["dump-keychain"], timeout: 10)) ?? ""
-        var names: Set<String> = []
-        for line in dump.split(separator: "\n") where line.contains("\"svce\"<blob>=\"Claude Code-credentials") {
-            if let a = line.range(of: "=\""), let b = line.range(of: "\"", options: .backwards), a.upperBound < b.lowerBound {
-                names.insert(String(line[a.upperBound..<b.lowerBound]))
-            }
-        }
-        return names.isEmpty ? ["Claude Code-credentials"] : names.sorted()
+    /// Keychain service names Claude Code uses ("Claude Code-credentials" and, for a
+    /// non-default config dir, "…-<first 8 hex of sha256(dir)>"). Known names only —
+    /// never `security dump-keychain`, which scans the whole keychain and can prompt.
+    static func keychainServices() -> [String] {
+        ["Claude Code-credentials"]
     }
 
     private func load() async throws -> ([UsageWindow], String?) {
@@ -222,7 +224,8 @@ actor ClaudeSource: UsageSource {
     }
 
     /// Every window in the response, labelled.
-    /// - `five_hour` is null when no 5-hour session is running: show it as 0 %, not as a missing row.
+    /// - `five_hour` is null when no 5-hour session is running: keep the 5H row at 0 % and mark
+    ///   it inactive so the HUD shows "no active session" instead of a fake idle burn rate.
     /// - `seven_day` is the all-models weekly limit.
     /// - Model-scoped weekly limits arrive in `limits[]` as `weekly_scoped` with `scope.model.display_name`;
     ///   older accounts may instead have `seven_day_opus` / `seven_day_sonnet`.
@@ -231,7 +234,8 @@ actor ClaudeSource: UsageSource {
         var out: [UsageWindow] = []
         let five = window("five_hour")
         out.append(UsageWindow(label: "5H", usedPercent: five.flatMap { num($0["utilization"]) } ?? 0,
-                               resetsAt: Fmt.date(five?["resets_at"]), windowSeconds: 18000))
+                               resetsAt: Fmt.date(five?["resets_at"]), windowSeconds: 18000,
+                               activeSession: five != nil))
         if let w = window("seven_day"), let u = num(w["utilization"]) {
             out.append(UsageWindow(label: "7D", usedPercent: u, resetsAt: Fmt.date(w["resets_at"]), windowSeconds: 604800))
         }
@@ -265,18 +269,24 @@ struct CodexSource: UsageSource {
             let dir = home.map { URL(fileURLWithPath: $0) }
                 ?? ProcessInfo.processInfo.environment["CODEX_HOME"].map { URL(fileURLWithPath: $0) }
                 ?? Paths.home.appendingPathComponent(".codex")
-            guard let auth = readJSONFile(dir.appendingPathComponent("auth.json")),
-                  let tokens = auth["tokens"] as? [String: Any],
-                  let token = tokens["access_token"] as? String else {
-                throw ProviderError.notConfigured("Codex not logged in with ChatGPT")
-            }
+            let creds = try await AuthRefresh.shared.codexAccess(home: dir)
             var req = URLRequest(url: URL(string: "https://chatgpt.com/backend-api/wham/usage")!)
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            if let acct = tokens["account_id"] as? String {
+            req.setValue("Bearer \(creds.token)", forHTTPHeaderField: "Authorization")
+            if let acct = creds.accountID {
                 req.setValue(acct, forHTTPHeaderField: "ChatGPT-Account-Id")
             }
             req.setValue("codex-cli", forHTTPHeaderField: "User-Agent")
-            let obj = try await HTTP.json(req)
+            let obj: [String: Any]
+            do {
+                obj = try await HTTP.json(req)
+            } catch ProviderError.expired {
+                let fresh = try await AuthRefresh.shared.codexAccess(home: dir, force: true)
+                req.setValue("Bearer \(fresh.token)", forHTTPHeaderField: "Authorization")
+                if let acct = fresh.accountID ?? creds.accountID {
+                    req.setValue(acct, forHTTPHeaderField: "ChatGPT-Account-Id")
+                }
+                obj = try await HTTP.json(req)
+            }
             let rl = obj["rate_limit"] as? [String: Any] ?? [:]
             var windows: [UsageWindow] = []
             for key in ["primary_window", "secondary_window"] {
@@ -291,7 +301,8 @@ struct CodexSource: UsageSource {
             // A null slot means that window isn't running right now; keep the 5H row as 0 %.
             if !windows.contains(where: { $0.label == "5H" }),
                rl["primary_window"] is NSNull || rl["secondary_window"] is NSNull {
-                windows.insert(UsageWindow(label: "5H", usedPercent: 0, resetsAt: nil, windowSeconds: 18000), at: 0)
+                windows.insert(UsageWindow(label: "5H", usedPercent: 0, resetsAt: nil, windowSeconds: 18000,
+                                           activeSession: false), at: 0)
             }
             return (windows, (obj["plan_type"] as? String)?.capitalized)
         }
@@ -379,18 +390,19 @@ struct GrokSource: UsageSource {
 
     func fetch() async -> [ProviderSnapshot] {
         await single(info) {
-            guard let auth = readJSONFile(Paths.home.appendingPathComponent(".grok/auth.json")),
-                  let entry = auth.values.compactMap({ $0 as? [String: Any] }).first(where: { $0["key"] is String }),
-                  let token = entry["key"] as? String, !token.isEmpty else {
-                throw ProviderError.notConfigured("Grok CLI not logged in")
-            }
-            if let exp = Fmt.date(entry["expires_at"]), exp < Date() {
-                throw ProviderError.expired("login expired")
-            }
+            let file = Paths.home.appendingPathComponent(".grok/auth.json")
+            let creds = try await AuthRefresh.shared.grokAccess(file: file)
             var req = URLRequest(url: URL(string: "https://cli-chat-proxy.grok.com/v1/billing?format=credits")!)
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            req.setValue("Bearer \(creds.token)", forHTTPHeaderField: "Authorization")
             req.setValue("xai-grok-cli", forHTTPHeaderField: "x-xai-token-auth")
-            let obj = try await HTTP.json(req)
+            let obj: [String: Any]
+            do {
+                obj = try await HTTP.json(req)
+            } catch ProviderError.expired {
+                let fresh = try await AuthRefresh.shared.grokAccess(file: file, force: true)
+                req.setValue("Bearer \(fresh.token)", forHTTPHeaderField: "Authorization")
+                obj = try await HTTP.json(req)
+            }
             let cfg = obj["config"] as? [String: Any] ?? obj
             var used = num(cfg["creditUsagePercent"])
             if used == nil, let u = num((cfg["onDemandUsed"] as? [String: Any])?["val"]),

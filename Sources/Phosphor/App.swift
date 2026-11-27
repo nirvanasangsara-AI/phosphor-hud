@@ -109,50 +109,6 @@ struct PhosphorMain {
 }
 
 /// Borderless, non-activating, always-on-top panel that follows you across Spaces.
-final class HUDPanel: NSPanel {
-    init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
-                   styleMask: [.borderless, .nonactivatingPanel],
-                   backing: .buffered, defer: false)
-        isFloatingPanel = true
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isMovableByWindowBackground = true
-        hidesOnDeactivate = false
-    }
-    override var canBecomeKey: Bool { true }
-
-    /// The SwiftUI hosting view swallows mouse-downs, so "movable by background" never kicks in.
-    /// The HUD has no clickable controls: any left-drag anywhere moves the window.
-    override func sendEvent(_ event: NSEvent) {
-        if event.type == .leftMouseDown {
-            // A press on a row's grip reorders rows instead of moving the window.
-            let p = CGPoint(x: event.locationInWindow.x, y: frame.height - event.locationInWindow.y)
-            if MainActor.assumeIsolated({ ReorderModel.shared.isGrip(p) }) {
-                super.sendEvent(event)
-                return
-            }
-            let before = frame.origin
-            performDrag(with: event)            // returns on mouse-up
-            // Didn't move: it was a click, so let SwiftUI have it (e.g. the Connect button).
-            if frame.origin == before,
-               let up = NSEvent.mouseEvent(with: .leftMouseUp, location: event.locationInWindow,
-                                           modifierFlags: event.modifierFlags, timestamp: event.timestamp,
-                                           windowNumber: event.windowNumber, context: nil,
-                                           eventNumber: event.eventNumber, clickCount: event.clickCount,
-                                           pressure: 0) {
-                super.sendEvent(event)
-                super.sendEvent(up)
-            }
-            return
-        }
-        super.sendEvent(event)
-    }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let demo = CommandLine.arguments.contains("--demo")
@@ -169,6 +125,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         panel = HUDPanel()
+        panel.onUserResize = { [weak self] size in
+            guard let self else { return }
+            self.prefs.hudUserSized = true
+            self.prefs.hudWidth = size.width
+            self.prefs.hudHeight = size.height
+        }
+        if self.prefs.hudUserSized, self.prefs.hudWidth >= HUDPanel.minWidth, self.prefs.hudHeight >= HUDPanel.minHeight {
+            var f = panel.frame
+            f.size = NSSize(width: self.prefs.hudWidth, height: self.prefs.hudHeight)
+            panel.setFrame(f, display: false)
+        }
         let host = NSHostingView(rootView: RootView(store: store) { [weak self] size in
             self?.resize(to: size)
         })
@@ -274,7 +241,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Keep the top-left corner fixed while the content grows or shrinks.
+    /// Once the user has resized the panel themselves, we stop fighting their frame.
     private func resize(to size: CGSize) {
+        guard !prefs.hudUserSized else { return }
         guard size.width > 0, size.height > 0 else { return }
         var f = panel.frame
         guard abs(f.width - size.width) > 0.5 || abs(f.height - size.height) > 0.5 else { return }
@@ -320,8 +289,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
 
-        menu.addItem(item(panel.isVisible ? "Hide HUD" : "Show HUD", #selector(toggleHUD), key: "h"))
-        menu.addItem(item("Refresh now", #selector(refreshNow), key: "r"))
+        if let pt = panel.lastRightClick, let key = panel.providerKey(at: pt), !key.hasPrefix("group:") {
+            let name = store.snapshots.first { $0.id == key }?.info.name ?? ProviderInfo.lookup(key).name
+            let hide = item(T.t("menu.hideProvider", name), #selector(hideProvider(_:)))
+            hide.representedObject = key
+            menu.addItem(hide)
+            menu.addItem(.separator())
+        }
+
+        menu.addItem(item(panel.isVisible ? T.t("menu.hideHUD") : T.t("menu.showHUD"), #selector(toggleHUD), key: "h"))
+        menu.addItem(item(T.t("menu.refreshNow"), #selector(refreshNow), key: "r"))
         menu.addItem(.separator())
 
         let registry = ThemeRegistry.shared
@@ -339,10 +316,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             i.isEnabled = false
             themes.addItem(i)
         }
-        themes.addItem(item("Open Themes Folder…", #selector(openThemes)))
-        menu.addItem(submenu("Theme", themes))
+        themes.addItem(item(T.t("menu.openThemes"), #selector(openThemes)))
+        menu.addItem(submenu(T.t("menu.theme"), themes))
 
-        let compact = item("Compact", #selector(toggleCompact), key: "c")
+        let compact = item(T.t("menu.compact"), #selector(toggleCompact), key: "c")
         compact.state = prefs.compact ? .on : .off
         menu.addItem(compact)
 
@@ -353,14 +330,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             i.state = abs(prefs.opacity - v) < 0.01 ? .on : .off
             opacity.addItem(i)
         }
-        menu.addItem(submenu("Opacity", opacity))
+        menu.addItem(submenu(T.t("menu.opacity"), opacity))
 
-        let through = item("Click-through (hold ⌥ to move · undo here)", #selector(toggleClickThrough))
+        let through = item(T.t("menu.clickThrough"), #selector(toggleClickThrough))
         through.state = prefs.clickThrough ? .on : .off
         menu.addItem(through)
+
+        let langs = NSMenu()
+        for lang in AppLanguage.allCases {
+            let title: String
+            switch lang {
+            case .english: title = T.t("lang.english")
+            case .korean: title = T.t("lang.korean")
+            case .system: title = T.t("lang.system")
+            }
+            let i = item(title, #selector(pickLanguage(_:)))
+            i.representedObject = lang.rawValue
+            i.state = prefs.appLanguage == lang ? .on : .off
+            langs.addItem(i)
+        }
+        menu.addItem(submenu(T.t("menu.language"), langs))
         menu.addItem(.separator())
 
         let providers = NSMenu()
+        let visibleHdr = NSMenuItem(title: T.t("menu.visibleServices"), action: nil, keyEquivalent: "")
+        visibleHdr.isEnabled = false
+        providers.addItem(visibleHdr)
+        if prefs.hudUserSized {
+            providers.addItem(item(T.t("menu.resetWindowSize"), #selector(resetWindowSize)))
+        }
         var lastFamily: String?
         for s in store.snapshots {
             let fam = ProviderFamilies.family(of: s.id)
@@ -389,7 +387,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !offline.isEmpty {
             providers.addItem(.separator())
             for s in offline {
-                let i = item("Connect \(s.info.name)…", #selector(connectProvider(_:)))
+                let i = item(T.t("menu.connect", s.info.name), #selector(connectProvider(_:)))
                 i.representedObject = s.id
                 providers.addItem(i)
             }
@@ -400,14 +398,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let more = NSMenu()
         let reg = store.registry
         let groups: [(String, [ProviderSpec])] = [
-            ("Installed on this Mac", groupedFirst(reg.extras.filter { reg.detected[$0.id] != nil })),
-            ("Not found", groupedFirst(reg.extras.filter { reg.detected[$0.id] == nil })),
+            (T.t("menu.installedOnMac"), groupedFirst(reg.extras.filter { reg.detected[$0.id] != nil })),
+            (T.t("menu.notFound"), groupedFirst(reg.extras.filter { reg.detected[$0.id] == nil })),
         ]
         for (title, specs) in groups where !specs.isEmpty {
             let h = NSMenuItem(title: title, action: nil, keyEquivalent: ""); h.isEnabled = false
             more.addItem(h)
             for spec in specs {
-                let how = reg.detected[spec.id] ?? (spec.sources.contains(.apiKey) ? APIKeys.howTo(spec) : "not installed")
+                let how = reg.detected[spec.id] ?? (spec.sources.contains(.apiKey) ? APIKeys.howTo(spec) : T.t("menu.notInstalled"))
                 let fam = ProviderFamilies.family(of: spec.id).map { "\($0.name) › " } ?? ""
                 let i = item("\(fam)\(spec.name) — \(how)", #selector(toggleCatalogProvider(_:)))
                 i.representedObject = spec.id
@@ -416,8 +414,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             more.addItem(.separator())
         }
-        more.addItem(item("Rescan installed tools", #selector(rescanProviders)))
-        providers.addItem(submenu("More Providers (\(reg.detected.filter { !ProviderRegistry.native.contains($0.key) }.count) found of \(reg.extras.count))", more))
+        more.addItem(item(T.t("menu.rescan"), #selector(rescanProviders)))
+        providers.addItem(submenu(T.t("menu.moreProviders", "\(reg.detected.filter { !ProviderRegistry.native.contains($0.key) }.count)", "\(reg.extras.count)"), more))
 
         let accountsMenu = NSMenu()
         for p in reg.profiles {
@@ -429,73 +427,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             accountsMenu.addItem(i)
         }
         if !reg.profiles.isEmpty || !reg.profileProblems.isEmpty { accountsMenu.addItem(.separator()) }
-        accountsMenu.addItem(item("Edit accounts.json…", #selector(openAccounts)))
-        providers.addItem(submenu("Extra Accounts (\(reg.profiles.count))", accountsMenu))
+        accountsMenu.addItem(item(T.t("menu.editAccounts"), #selector(openAccounts)))
+        providers.addItem(submenu(T.t("menu.extraAccounts", "\(reg.profiles.count)"), accountsMenu))
         providers.addItem(.separator())
-        let showOff = item("Show not-connected providers", #selector(toggleShowUnavailable))
+        let showOff = item(T.t("menu.showUnavailable"), #selector(toggleShowUnavailable))
         showOff.state = prefs.showUnavailable ? .on : .off
         providers.addItem(showOff)
-        providers.addItem(item("Add custom provider…", #selector(openConfig)))
-        let reset = item("Reset Order (drag ≡ on a row to reorder)", #selector(resetOrder))
+        providers.addItem(item(T.t("menu.addCustom"), #selector(openConfig)))
+        let reset = item(T.t("menu.resetOrder"), #selector(resetOrder))
         reset.isEnabled = !prefs.rowOrder.isEmpty
         providers.addItem(reset)
-        let resets = item("Read Claude reset credits (uses your Claude login outside Claude Code)", #selector(toggleClaudeResets))
+        let resets = item(T.t("menu.claudeResets"), #selector(toggleClaudeResets))
         resets.state = prefs.claudeResetCredits ? .on : .off
         providers.addItem(resets)
         providers.addItem(.separator())
-        providers.addItem(item("Download Official Logos", #selector(downloadLogos)))
-        if Logos.hasDownloaded { providers.addItem(item("Remove Downloaded Logos", #selector(removeLogos))) }
-        menu.addItem(submenu("Providers", providers))
+        providers.addItem(item(T.t("menu.downloadLogos"), #selector(downloadLogos)))
+        if Logos.hasDownloaded { providers.addItem(item(T.t("menu.removeLogos"), #selector(removeLogos))) }
+        menu.addItem(submenu(T.t("menu.providers"), providers))
 
-        let chart = item("Usage chart (local logs)", #selector(toggleChart))
+        let chart = item(T.t("menu.chart"), #selector(toggleChart))
         chart.state = prefs.showChart ? .on : .off
         menu.addItem(chart)
-        let devStats = item("GitHub PRs & efficiency (gh, read-only)", #selector(toggleDevStats))
+        let devStats = item(T.t("menu.devStats"), #selector(toggleDevStats))
         devStats.state = prefs.showDevStats ? .on : .off
         menu.addItem(devStats)
         if prefs.showDevStats, store.dev.counts != nil {
-            menu.addItem(item("Save Monthly Receipt (PNG, copied)", #selector(saveReceipt)))
+            menu.addItem(item(T.t("menu.saveReceipt"), #selector(saveReceipt)))
         }
 
         let a = store.alertSettings
         let notes = NSMenu()
-        for (title, key, on) in [("Warning at \(Int(a.warnAt))%", "warn", a.warnEnabled),
-                                 ("Critical at \(Int(a.criticalAt))%", "critical", a.criticalEnabled),
-                                 ("Window reset (from ≥\(Int(a.resetFrom))%)", "reset", a.resetEnabled),
-                                 ("Bill due (\(a.billDaysBefore) day\(a.billDaysBefore == 1 ? "" : "s") before)", "bill", a.billEnabled),
-                                 ("Reset credit expiring (\(a.creditDaysBefore) days before)", "credit", a.creditEnabled)] {
+        let billKey = a.billDaysBefore == 1 ? "menu.billDueOne" : "menu.billDue"
+        for (title, key, on) in [(T.t("menu.warnAt", "\(Int(a.warnAt))"), "warn", a.warnEnabled),
+                                 (T.t("menu.criticalAt", "\(Int(a.criticalAt))"), "critical", a.criticalEnabled),
+                                 (T.t("menu.windowReset", "\(Int(a.resetFrom))"), "reset", a.resetEnabled),
+                                 (T.t(billKey, "\(a.billDaysBefore)"), "bill", a.billEnabled),
+                                 (T.t("menu.creditExpiry", "\(a.creditDaysBefore)"), "credit", a.creditEnabled)] {
             let i = item(title, #selector(toggleAlert(_:)))
             i.representedObject = key
             i.state = on ? .on : .off
             notes.addItem(i)
         }
         notes.addItem(.separator())
-        notes.addItem(item("Edit thresholds (alerts.json)…", #selector(openAlerts)))
-        menu.addItem(submenu("Notifications", notes))
+        notes.addItem(item(T.t("menu.editAlerts"), #selector(openAlerts)))
+        menu.addItem(submenu(T.t("menu.notifications"), notes))
 
         let stale = store.snapshots.filter { store.accounts[$0.id]?.staleText != nil }
         if !stale.isEmpty {
-            let i = NSMenuItem(title: "⚠︎ Billing screens need refresh: " + stale.map(\.info.name).joined(separator: ", "), action: nil, keyEquivalent: "")
+            let i = NSMenuItem(title: T.t("menu.billingStale", stale.map(\.info.name).joined(separator: ", ")), action: nil, keyEquivalent: "")
             i.isEnabled = false
             menu.addItem(i)
         }
-        menu.addItem(item("Calendar export (\(store.exportedEvents) events)…", #selector(openExport)))
+        menu.addItem(item(T.t("menu.calendarExport", "\(store.exportedEvents)"), #selector(openExport)))
         menu.addItem(.separator())
 
         let every = NSMenu()
-        for (title, secs) in [("1 min", 60.0), ("3 min", 180.0), ("5 min", 300.0), ("10 min", 600.0)] {
+        for (title, secs) in [(T.t("menu.every1"), 60.0), (T.t("menu.every3"), 180.0),
+                              (T.t("menu.every5"), 300.0), (T.t("menu.every10"), 600.0)] {
             let i = item(title, #selector(pickInterval(_:)))
             i.representedObject = secs
             i.state = prefs.refreshSeconds == secs ? .on : .off
             every.addItem(i)
         }
-        menu.addItem(submenu("Refresh every", every))
+        menu.addItem(submenu(T.t("menu.refreshEvery"), every))
 
-        let login = item("Launch at login", #selector(toggleLogin))
+        let login = item(T.t("menu.launchAtLogin"), #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         menu.addItem(login)
         menu.addItem(.separator())
-        menu.addItem(item("Quit Phosphor", #selector(quit), key: "q"))
+        menu.addItem(item(T.t("menu.quit"), #selector(quit), key: "q"))
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -522,6 +522,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func pickTheme(_ s: NSMenuItem) {
         if let id = s.representedObject as? String { prefs.theme = id }
     }
+    @objc private func pickLanguage(_ s: NSMenuItem) {
+        if let raw = s.representedObject as? String, AppLanguage(rawValue: raw) != nil {
+            prefs.language = raw
+        }
+    }
     @objc private func toggleCompact() { prefs.compact.toggle() }
     @objc private func pickOpacity(_ s: NSMenuItem) { if let v = s.representedObject as? Double { prefs.opacity = v } }
     @objc private func toggleClickThrough() { prefs.clickThrough.toggle() }
@@ -531,6 +536,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let id = s.representedObject as? String else { return }
         if prefs.hidden.contains(id) { prefs.hidden.remove(id) } else { prefs.hidden.insert(id) }
         updateStatusTitle(store.snapshots)
+    }
+    @objc private func hideProvider(_ s: NSMenuItem) {
+        guard let id = s.representedObject as? String else { return }
+        prefs.hidden = ProviderVisibility.hiding(id, in: prefs.hidden)
+        updateStatusTitle(store.snapshots)
+    }
+    @objc private func resetWindowSize() {
+        prefs.hudUserSized = false
+        prefs.hudWidth = 0
+        prefs.hudHeight = 0
+        prefs.objectWillChange.send()
     }
     @objc private func pickInterval(_ s: NSMenuItem) {
         if let v = s.representedObject as? Double { prefs.refreshSeconds = v; store.reschedule() }

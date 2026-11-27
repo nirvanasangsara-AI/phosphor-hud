@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.png" width="420" alt="Phosphor HUD with demo data: Claude Code, Codex, Google AI group, Grok, Copilot, burn rates and run-out times">
+  <img src="docs/assets/hero.gif" width="420" alt="Live Phosphor HUD in English: Claude Code, Codex, Google AI, Grok, Copilot, Elite glow, weekly sparklines, and burn-rate / depletion lines">
 </p>
 
 <p align="center">
@@ -31,9 +31,10 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
 - **30+ providers, auto-detected.** Claude Code, Codex / ChatGPT, Antigravity, Gemini CLI, Grok CLI, GitHub Copilot,
   Muse Code, Cursor, Windsurf, Cline, Roo Code, Aider, Kiro, Warp, Amp, OpenRouter, Ollama, LM Studio, OpenAI and
   Anthropic API spend, and more. Phosphor finds installed CLIs, apps and logs and turns the right rows on. Toggle any of them.
-- **Burn rate and run-out time on every quota bar.** It fits your recent usage (last hour for 5-hour windows, last 6 hours for weekly ones).
-  You get `+3.2%/h` and the time you'll hit 100 % (in the warning colour if that comes before the reset), or `≈ 83% at reset` if you'll make it.
+- **Burn rate and run-out time on every quota bar.** Two recent samples are enough to fit a slope (last hour for 5-hour windows, last 6 hours for weekly ones).
+  You get `+3.2%/h` and the time you'll hit 100 % (in the warning colour if that comes before the reset), or `≈ 83% at reset` if you'll make it. When a slope can't be fitted yet the line stays up as `measuring pace`, `steady · 0%/h`, `▲ limit reached`, or `no active session`.
 - **Always on top, natively.** A SwiftUI panel with no web runtime that floats over every Space. Compact mode, opacity, click-through, and a `Φ 94%` menu bar item.
+- **Language.** English by default, with in-app language switching (English, Korean, or follow your macOS system language) covering menus, settings, and burn-rate / depletion descriptions.
 - **Subscription ROI.** Local Claude Code / Codex / Gemini CLI logs are priced at API list rates (LiteLLM's public table) and set against what your plans cost: `ROI 8.4x`.
   A 14-day stacked chart shows tokens or dollars per tool.
 - **GitHub PR efficiency.** Merged PRs and commits for today / 7D / 30D through your existing `gh` login (read-only), plus cost per PR, tokens per PR and velocity.
@@ -54,7 +55,7 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
   <img src="docs/screenshots/themes.gif" width="300" alt="Phosphor cycling through its themes">
 </p>
 
-<sub>Screenshots use the built-in demo data (`Phosphor --demo`), not a real account.</sub>
+<sub>The hero GIF is a live HUD recording (English). The chart and theme shots below use the built-in demo data (`Phosphor --demo`).</sub>
 
 ## Install
 
@@ -97,6 +98,7 @@ swift test                    # PhosphorCore unit tests
 
 - Claude Code, Codex, Google AI(Antigravity·Gemini), Grok, Copilot 등 30개 이상의 서비스를 자동으로 찾아 한도 %와 리셋 시각을 한눈에 보여 줍니다.
 - 최근 사용 속도로 **언제 한도에 닿는지**(`▲ limit 15:20 · in 1h 21m`)를 미리 알려 줍니다.
+- 기본 언어는 영어이며, 앱에서 영어 / 한국어 / macOS 시스템 언어를 고를 수 있습니다. 메뉴, 설정, 소진율·예상 소진 안내가 선택한 언어로 바뀝니다.
 - 로컬 로그를 API 정가로 환산해 **구독 ROI**를 계산하고, `gh` 로그인으로 **GitHub PR·커밋 효율**을 보여 줍니다. 등급 배지는 LinearB 2026 공개 벤치마크 기준입니다.
 - 쿠키·세션 스크래핑은 하지 않습니다. 각 공식 도구가 이미 저장해 둔 값만 읽고, 토큰은 출력하거나 저장하지 않습니다.
 

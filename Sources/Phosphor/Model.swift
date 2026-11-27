@@ -20,7 +20,15 @@ struct UsageWindow: Identifiable, Hashable {
     let resetsAt: Date?
     let windowSeconds: TimeInterval?
     var forecast: Forecast? = nil   // filled in from History after each refresh
+    /// False when the provider reports that this window isn't running (e.g. Claude `five_hour` is null).
+    var activeSession: Bool = true
     var measure: Measure = .quota
+    /// Optional subtitle (model names, “API-equivalent from local logs”, …).
+    var detail: String? = nil
+    /// Named tags drawn as compact badges (Ollama models, etc.).
+    var tags: [String] = []
+    /// Historical samples for a weekly sparkline (raw values, any unit).
+    var sparkline: [Double] = []
 
     var remainingPercent: Double { max(0, 100 - usedPercent) }
 
@@ -32,6 +40,8 @@ struct UsageWindow: Identifiable, Hashable {
         case .meter: return false
         }
     }
+
+    var isWeekly: Bool { SparklineSeries.isWeekly(label: label, windowSeconds: windowSeconds) }
 
     /// "1.2M of 5M credits left", "$4.20 left", "820K tokens": nil for a plain quota.
     var amountText: String? {
@@ -344,6 +354,14 @@ final class Prefs: ObservableObject {
     @Published var rowOrder: [String] { didSet { d.set(rowOrder, forKey: "rowOrder") } }
     /// Family groups folded to one line.
     @Published var collapsedGroups: Set<String> { didSet { d.set(Array(collapsedGroups), forKey: "collapsedGroups") } }
+    /// The user dragged an edge or corner; the HUD keeps this frame across launches.
+    @Published var hudUserSized: Bool { didSet { d.set(hudUserSized, forKey: "hudUserSized") } }
+    @Published var hudWidth: Double { didSet { d.set(hudWidth, forKey: "hudWidth") } }
+    @Published var hudHeight: Double { didSet { d.set(hudHeight, forKey: "hudHeight") } }
+    /// English by default. "korean" or "system" (follow macOS) are chosen in the Language menu.
+    @Published var language: String { didSet { d.set(language, forKey: "language") } }
+
+    var appLanguage: AppLanguage { AppLanguage(rawValue: language) ?? .english }
 
     private init() {
         theme = d.string(forKey: "theme") ?? "clean"
@@ -360,6 +378,18 @@ final class Prefs: ObservableObject {
         chartCost = d.object(forKey: "chartCost") as? Bool ?? true
         rowOrder = d.stringArray(forKey: "rowOrder") ?? []
         collapsedGroups = Set(d.stringArray(forKey: "collapsedGroups") ?? [])
+        hudUserSized = d.bool(forKey: "hudUserSized")
+        hudWidth = d.object(forKey: "hudWidth") as? Double ?? 0
+        hudHeight = d.object(forKey: "hudHeight") as? Double ?? 0
+        language = d.string(forKey: "language") ?? AppLanguage.english.rawValue
+    }
+
+    func hideProvider(_ id: String) {
+        hidden = ProviderVisibility.hiding(id, in: hidden)
+    }
+
+    func showProvider(_ id: String) {
+        hidden = ProviderVisibility.showing(id, in: hidden)
     }
 }
 

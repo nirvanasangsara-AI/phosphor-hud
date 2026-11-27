@@ -13,10 +13,17 @@ struct RootView: View {
     var body: some View {
         let theme = registry.theme(prefs.theme)
         TimelineView(.periodic(from: .now, by: 20)) { ctx in
-            panel(theme, now: ctx.date)
+            if prefs.hudUserSized, prefs.hudWidth >= 240, prefs.hudHeight >= 140 {
+                ScrollView(.vertical, showsIndicators: false) {
+                    panel(theme, now: ctx.date)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                panel(theme, now: ctx.date)
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { onResize($0) }
+            }
         }
-        .fixedSize()
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { onResize($0) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -33,6 +40,11 @@ struct RootView: View {
     private func width(_ theme: Theme, count: Int) -> CGFloat {
         if theme.layout == .raid { return count > 3 ? 390 : 204 }
         return prefs.compact ? theme.compactWidth : theme.width
+    }
+
+    private func panelWidth(_ theme: Theme, count: Int) -> CGFloat {
+        if prefs.hudUserSized, prefs.hudWidth >= 240 { return prefs.hudWidth }
+        return width(theme, count: count)
     }
 
     @ViewBuilder
@@ -71,9 +83,10 @@ struct RootView: View {
                 if prefs.showChart { UsageChartView(logs: store.logs, theme: theme) }
             }
         }
+        .id(prefs.language)   // redraw burn-rate lines and menus when the language changes
         .modifier(Glow(theme: theme))
         .padding(14)
-        .frame(width: width(theme, count: items.count), alignment: .leading)
+        .frame(width: panelWidth(theme, count: items.count), alignment: .leading)
         .background {
             ZStack {
                 BackdropView(theme: theme)
@@ -109,6 +122,9 @@ struct Header: View {
                 Text(status)
                     .font(theme.font(10))
                     .foregroundStyle(theme.dim)
+                if !Prefs.shared.hidden.isEmpty {
+                    HiddenServicesButton(theme: theme, store: store)
+                }
                 Button { Prefs.shared.showChart.toggle() } label: {
                     Image(systemName: Prefs.shared.showChart ? "chart.bar.fill" : "chart.bar")
                         .font(.system(size: 10)).foregroundStyle(theme.dim)
@@ -172,7 +188,7 @@ struct ProviderRow: View {
             let h = hover
             h.inside = inside
             if inside {
-                let ready = account != nil
+                let ready = account != nil || logged != nil
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { if h.inside && ready { h.showCard = true } }
             } else {
                 h.showCard = false
@@ -183,6 +199,28 @@ struct ProviderRow: View {
                 AccountCard(name: snap.info.name, account: account, theme: theme, health: health, logged: logged)
                     .environment(\.colorScheme, .dark)
                     .presentationBackground(Color(white: 0.11))
+            } else if let logged {
+                Text(logged)
+                    .font(.system(size: 11))
+                    .padding(12)
+                    .frame(width: 280, alignment: .leading)
+                    .environment(\.colorScheme, .dark)
+                    .presentationBackground(Color(white: 0.11))
+            }
+        }
+        .contextMenu {
+            Button(T.t("hide.button")) { Prefs.shared.hideProvider(snap.id) }
+        }
+        .overlay(alignment: .topTrailing) {
+            if hover.inside {
+                Button { Prefs.shared.hideProvider(snap.id) } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.dim.opacity(0.9))
+                        .padding(2)
+                }
+                .buttonStyle(.plain)
+                .help(T.t("hide.help"))
             }
         }
     }
@@ -217,7 +255,7 @@ struct ProviderRow: View {
             statusDot
             Spacer(minLength: 4)
             if case .idle = snap.state {
-                Text(theme.name("signed in")).font(theme.font(10)).foregroundStyle(theme.dim)
+                Text(theme.name(T.t("status.signedIn"))).font(theme.font(10)).foregroundStyle(theme.dim)
             } else if snap.windows.isEmpty {
                 Text(theme.name("off")).font(theme.font(10)).foregroundStyle(theme.dim)
             }
@@ -225,7 +263,7 @@ struct ProviderRow: View {
                 Text(w.gauged ? "\(Int(w.usedPercent.rounded()))%" : (w.amountText ?? ""))
                     .font(theme.font(11, .bold))
                     .monospacedDigit()
-                    .foregroundStyle(w.forecast?.beforeReset == true ? theme.warn : color(for: w))
+                    .foregroundStyle(w.forecast?.warnsBeforeReset == true ? theme.warn : color(for: w))
             }
         }
     }
@@ -261,16 +299,16 @@ struct ProviderRow: View {
                         .opacity(snap.staleNote != nil && w.gauged ? 0.6 : 1)
                 }
                 if let cached = snap.staleNote {
-                    Text(theme.name("◷ " + cached)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
-                        .help("Claude Code’s access token expired because Claude Code hasn’t run lately; it renews it itself next time. These bars are the last live reading.")
+                    Text(theme.name("◷ " + T.stale(cached, now: now))).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
+                        .help(T.t("stale.help"))
                 }
                 ForEach(creditLines, id: \.self) { c in
-                    Text(theme.name("↻ \(c.title) \(c.amount)" + (c.expires.map { " · until \(Fmt.shortDate($0))" } ?? "")))
+                    Text(theme.name("↻ \(T.credit(c.title)) \(c.amount)" + (c.expires.map { " · until \(Fmt.shortDate($0))" } ?? "")))
                         .font(theme.font(9)).foregroundStyle(theme.tint(snap.info)).lineLimit(1)
                 }
             case .idle(let m, _):
                 // Signed in and fine: nothing to fix, so no Connect button.
-                Text(theme.name(m)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
+                Text(theme.name(ClaudeSource.isWaiting(m) ? T.t("stale.logs") : m)).font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
             case .error(let m), .unavailable(let m):
                 HStack(spacing: 8) {
                     if let note {
@@ -313,6 +351,7 @@ struct WindowLine: View {
     let tint: Color
     let now: Date
     var labelWidth: CGFloat = 34
+    @ObservedObject private var prefs = Prefs.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -339,7 +378,11 @@ struct WindowLine: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                Text(Fmt.countdown(to: w.resetsAt, now: now))
+                if w.isWeekly {
+                    UsageSparkline(values: w.sparkline.isEmpty ? [w.gauged ? w.usedPercent : 0] : w.sparkline,
+                                   tint: tint)
+                }
+                Text(T.countdown(to: w.resetsAt, now: now))
                     .font(theme.font(10))
                     .monospacedDigit()
                     .foregroundStyle(theme.dim)
@@ -349,6 +392,14 @@ struct WindowLine: View {
                 Text(theme.name(amount)).font(theme.font(10)).monospacedDigit().foregroundStyle(theme.dim)
                     .lineLimit(1).padding(.leading, labelWidth + 8)
             }
+            if !w.tags.isEmpty {
+                TagRow(tags: w.tags, theme: theme, tint: tint)
+                    .padding(.leading, labelWidth + 8)
+            } else if let detail = w.detail, !detail.isEmpty {
+                Text(theme.name(T.detail(detail))).font(theme.font(9)).foregroundStyle(theme.dim)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, labelWidth + 8)
+            }
             if let f = w.forecast {
                 ForecastLine(f: f, theme: theme, now: now).padding(.leading, labelWidth + 8)
             }
@@ -356,31 +407,67 @@ struct WindowLine: View {
     }
 }
 
-/// "▲ LIMIT 14:32 · 1h 12m" when you'll run dry before the reset, "≈ 82% AT RESET" otherwise.
+/// Status under every quota bar: rate and run-out time, or a standing label when a slope
+/// can't be fitted yet (measuring / steady / cap / no active session).
 struct ForecastLine: View {
     let f: Forecast
     let theme: Theme
     let now: Date
+    @ObservedObject private var prefs = Prefs.shared
 
     var body: some View {
         HStack(spacing: 4) {
-            if f.beforeReset {
-                Text(theme.name("▲ limit \(Fmt.clock(f.hitsLimitAt, now: now)) · in \(Fmt.countdown(to: f.hitsLimitAt, now: now))"))
-                    .foregroundStyle(theme.warn)
-            } else if let r = f.atReset {
-                Text(theme.name("≈ \(Int(r.rounded()))% at reset"))
-                    .foregroundStyle(theme.dim)
-            }
+            Text(theme.name(caption))
+                .foregroundStyle(emphasis ? theme.warn : theme.dim)
             Spacer(minLength: 0)
-            Text(theme.name("+\(rate)%/h"))
-                .foregroundStyle(f.beforeReset ? theme.warn : theme.dim)
+            if let rate {
+                Text(theme.name(rate))
+                    .foregroundStyle(emphasis ? theme.warn : theme.dim)
+            }
         }
-        .font(theme.font(10, f.beforeReset ? .semibold : .regular))
+        .font(theme.font(10, emphasis ? .semibold : .regular))
         .monospacedDigit()
         .lineLimit(1)
     }
 
-    private var rate: String {
+    private var emphasis: Bool { f.warnsBeforeReset || f.kind == .limitReached }
+
+    private var caption: String {
+        switch f.kind {
+        case .rate:
+            if f.warnsBeforeReset, let hits = f.hitsLimitAt {
+                return T.t("forecast.limit", T.clock(hits, now: now), T.countdown(to: hits, now: now))
+            }
+            if let r = f.atReset {
+                return T.t("forecast.atReset", "\(Int(r.rounded()))")
+            }
+            return T.t("forecast.rateOnly", rateValue)
+        case .steady:
+            if let r = f.atReset {
+                return T.t("forecast.steadyAtReset", "\(Int(r.rounded()))")
+            }
+            return T.t("forecast.steady")
+        case .measuring:
+            return T.t("forecast.measuring")
+        case .limitReached:
+            if let r = f.resetsAt, r > now {
+                return T.t("forecast.limitReachedIn", T.countdown(to: r, now: now))
+            }
+            return T.t("forecast.limitReached")
+        case .noSession:
+            return T.t("forecast.noSession")
+        }
+    }
+
+    private var rate: String? {
+        switch f.kind {
+        case .rate: return T.t("forecast.rate", rateValue)
+        case .steady, .measuring: return T.t("forecast.rateIdle")
+        case .limitReached, .noSession: return nil
+        }
+    }
+
+    private var rateValue: String {
         f.ratePerHour >= 10 ? String(Int(f.ratePerHour.rounded())) : String(format: "%.1f", f.ratePerHour)
     }
 }
@@ -462,11 +549,10 @@ struct UsageBar: View {
 
     static func paceHelp(used: Double, pace: Double) -> String {
         let diff = Int((used - pace).rounded())
-        let verdict = diff > 2 ? "\(diff) points ahead of pace — you're burning fast."
-            : diff < -2 ? "\(-diff) points under pace — you have room."
-            : "Right on pace."
-        return "Pace marker: spreading usage evenly over this window, you'd be at \(Int(pace.rounded()))% by now. "
-            + "You're at \(Int(used.rounded()))%. \(verdict)"
+        let verdict = diff > 2 ? T.t("pace.ahead", "\(diff)")
+            : diff < -2 ? T.t("pace.under", "\(-diff)")
+            : T.t("pace.on")
+        return T.t("pace.help", "\(Int(pace.rounded()))", "\(Int(used.rounded()))", verdict)
     }
 }
 
@@ -505,7 +591,8 @@ struct RaidFrame: View {
     private var hp: Double { primary?.remainingPercent ?? 0 }
     private var critical: Bool { snap.windows.contains { $0.usedPercent >= 90 } }
     private var doom: Forecast? {
-        snap.windows.compactMap(\.forecast).filter(\.beforeReset).min { $0.hitsLimitAt < $1.hitsLimitAt }
+        snap.windows.compactMap(\.forecast).filter(\.warnsBeforeReset)
+            .min { ($0.hitsLimitAt ?? .distantFuture) < ($1.hitsLimitAt ?? .distantFuture) }
     }
 
     private var hpColor: Color {
@@ -590,7 +677,7 @@ struct RaidFrame: View {
                 HStack {
                     status(revive: revive != nil || recentlyRevived(t))
                     Spacer()
-                    Text(Fmt.countdown(to: primary?.resetsAt, now: now))
+                    Text(T.countdown(to: primary?.resetsAt, now: now))
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(theme.dim)
                 }
@@ -630,12 +717,12 @@ struct RaidFrame: View {
             guard online else {
                 // Connected but nothing with a limit: show the reading, not "Offline".
                 if let w = snap.windows.first, let t = w.amountText { return ("\(w.label) \(t)", theme.dim) }
-                if case .idle = snap.state { return ("Signed in", theme.dim) }
+                if case .idle = snap.state { return (T.t("raid.signedIn"), theme.dim) }
                 return ("Offline", theme.dim)
             }
             if revive { return ("Resurrected", Color(hex: "#FFD966")) }
             if snap.windows.contains(where: { $0.usedPercent >= 95 }) { return ("Exhausted", theme.danger) }
-            if let f = doom { return ("Out by \(Fmt.clock(f.hitsLimitAt, now: now))", theme.warn) }
+            if let f = doom, let hits = f.hitsLimitAt { return (T.t("raid.outBy", T.clock(hits, now: now)), theme.warn) }
             if snap.windows.allSatisfy({ $0.usedPercent < 10 }) { return ("Rested", theme.hpHigh) }
             return (snap.plan ?? "", theme.dim)
         }()
@@ -683,7 +770,7 @@ struct CombatLog: View {
 // MARK: - Account card (hover)
 
 final class HoverState: ObservableObject {
-    var inside = false
+    @Published var inside = false
     @Published var showCard = false
 }
 
@@ -715,7 +802,7 @@ struct AccountCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Reset & refill credits").font(.system(size: 10)).foregroundStyle(.secondary)
                 ForEach(account.credits, id: \.self) { c in
-                    Text("\(c.title) \(c.amount)" + (c.expires.map { " · expires \(Fmt.shortDate($0))" } ?? ""))
+                    Text("\(T.credit(c.title)) \(c.amount)" + (c.expires.map { " · expires \(Fmt.shortDate($0))" } ?? ""))
                         .font(.system(size: 12))
                 }
                 if let note = account.creditsNote {
@@ -948,5 +1035,148 @@ struct StageWallpaper: View {
             Circle().fill(Color(hex: "#3F8CFF")).frame(width: 380).blur(radius: 110).offset(x: 240, y: 120)
             Circle().fill(Color(hex: "#18C29C")).frame(width: 260).blur(radius: 90).offset(x: -120, y: 260)
         }
+    }
+}
+
+
+// MARK: - Weekly sparkline
+
+struct UsageSparkline: View {
+    let values: [Double]
+    let tint: Color
+    var body: some View {
+        let pts = SparklineSeries.normalize(values)
+        Canvas { ctx, size in
+            guard let first = pts.first, pts.count >= 1 else { return }
+            var line = Path()
+            var fill = Path()
+            func pt(_ i: Int, _ v: Double) -> CGPoint {
+                let x = pts.count == 1 ? size.width / 2 : size.width * CGFloat(i) / CGFloat(pts.count - 1)
+                let y = size.height - CGFloat(v) * (size.height - 2) - 1
+                return CGPoint(x: x, y: y)
+            }
+            let start = pt(0, first)
+            line.move(to: start)
+            fill.move(to: CGPoint(x: start.x, y: size.height))
+            fill.addLine(to: start)
+            for (i, v) in pts.enumerated().dropFirst() {
+                let p = pt(i, v)
+                line.addLine(to: p)
+                fill.addLine(to: p)
+            }
+            if let lastI = pts.indices.last {
+                fill.addLine(to: CGPoint(x: pt(lastI, pts[lastI]).x, y: size.height))
+                fill.closeSubpath()
+            }
+            ctx.fill(fill, with: .color(tint.opacity(0.22)))
+            ctx.stroke(line, with: .color(tint.opacity(0.95)), lineWidth: 1.15)
+        }
+        .frame(width: 52, height: 16)
+        .help(T.t("sparkline.help"))
+        .accessibilityLabel(T.t("sparkline.access"))
+    }
+}
+
+struct TagRow: View {
+    let tags: [String]
+    let theme: Theme
+    let tint: Color
+    var body: some View {
+        // Compact wrapping badges so every installed / loaded model name is visible.
+        VStack(alignment: .leading, spacing: 3) {
+            FlowTags(tags: tags, theme: theme, tint: tint)
+        }
+    }
+}
+
+/// Simple left-to-right wrapping row of name badges (no third-party layout helpers).
+struct FlowTags: View {
+    let tags: [String]
+    let theme: Theme
+    let tint: Color
+    var body: some View {
+        // A wrapping HStack via `+` text would truncate; use a flexible LazyVGrid with
+        // adaptive columns so names stay readable even when many models are installed.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 4, alignment: .leading)],
+                  alignment: .leading, spacing: 4) {
+            ForEach(tags, id: \.self) { name in
+                Text(name)
+                    .font(theme.font(8, .medium))
+                    .foregroundStyle(theme.fg)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(tint.opacity(0.18)))
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+// MARK: - Hidden providers (restore)
+
+struct HiddenServicesButton: View {
+    let theme: Theme
+    @ObservedObject var store: UsageStore
+    @ObservedObject var prefs = Prefs.shared
+    @StateObject private var pop = HoverFlag()
+
+    var body: some View {
+        Button { pop.on.toggle() } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(theme.name(T.t("hidden.count", "\(prefs.hidden.count)")))
+                    .font(theme.font(9, .medium))
+            }
+            .foregroundStyle(theme.dim)
+        }
+        .buttonStyle(.plain)
+        .help(T.t("hidden.help"))
+        .popover(isPresented: $pop.on, arrowEdge: .bottom) {
+            HiddenServicesList(theme: theme, store: store)
+                .environment(\.colorScheme, .dark)
+                .presentationBackground(Color(white: 0.11))
+        }
+    }
+}
+
+struct HiddenServicesList: View {
+    let theme: Theme
+    @ObservedObject var store: UsageStore
+    @ObservedObject var prefs = Prefs.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(T.t("hidden.title")).font(.system(size: 12, weight: .semibold))
+            Text(T.t("hidden.body"))
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            let ids = (store.snapshots.map(\.id) + prefs.hidden.sorted()).uniqued()
+            ForEach(ids, id: \.self) { id in
+                let on = !prefs.hidden.contains(id)
+                let name = store.snapshots.first { $0.id == id }?.info.name ?? ProviderInfo.lookup(id).name
+                Button {
+                    if on { prefs.hideProvider(id) } else { prefs.showProvider(id) }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(on ? theme.tint(ProviderInfo.lookup(id)) : .secondary)
+                        Text(name).foregroundStyle(.primary)
+                        Spacer()
+                        if !on { Text(T.t("hidden.badge")).font(.system(size: 10)).foregroundStyle(.secondary) }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(width: 260, alignment: .leading)
+    }
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen = Set<Element>()
+        return filter { seen.insert($0).inserted }
     }
 }
