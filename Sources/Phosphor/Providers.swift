@@ -218,7 +218,8 @@ actor ClaudeSource: UsageSource {
     }
 
     /// Every window in the response, labelled.
-    /// - `five_hour` is null when no 5-hour session is running: show it as 0 %, not as a missing row.
+    /// - `five_hour` is null when no 5-hour session is running: keep the 5H row at 0 % and mark
+    ///   it inactive so the HUD shows "no active session" instead of a fake idle burn rate.
     /// - `seven_day` is the all-models weekly limit.
     /// - Model-scoped weekly limits arrive in `limits[]` as `weekly_scoped` with `scope.model.display_name`;
     ///   older accounts may instead have `seven_day_opus` / `seven_day_sonnet`.
@@ -227,7 +228,8 @@ actor ClaudeSource: UsageSource {
         var out: [UsageWindow] = []
         let five = window("five_hour")
         out.append(UsageWindow(label: "5H", usedPercent: five.flatMap { num($0["utilization"]) } ?? 0,
-                               resetsAt: Fmt.date(five?["resets_at"]), windowSeconds: 18000))
+                               resetsAt: Fmt.date(five?["resets_at"]), windowSeconds: 18000,
+                               activeSession: five != nil))
         if let w = window("seven_day"), let u = num(w["utilization"]) {
             out.append(UsageWindow(label: "7D", usedPercent: u, resetsAt: Fmt.date(w["resets_at"]), windowSeconds: 604800))
         }
@@ -293,7 +295,8 @@ struct CodexSource: UsageSource {
             // A null slot means that window isn't running right now; keep the 5H row as 0 %.
             if !windows.contains(where: { $0.label == "5H" }),
                rl["primary_window"] is NSNull || rl["secondary_window"] is NSNull {
-                windows.insert(UsageWindow(label: "5H", usedPercent: 0, resetsAt: nil, windowSeconds: 18000), at: 0)
+                windows.insert(UsageWindow(label: "5H", usedPercent: 0, resetsAt: nil, windowSeconds: 18000,
+                                           activeSession: false), at: 0)
             }
             return (windows, (obj["plan_type"] as? String)?.capitalized)
         }

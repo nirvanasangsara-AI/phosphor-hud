@@ -20,6 +20,8 @@ struct UsageWindow: Identifiable, Hashable {
     let resetsAt: Date?
     let windowSeconds: TimeInterval?
     var forecast: Forecast? = nil   // filled in from History after each refresh
+    /// False when the provider reports that this window isn't running (e.g. Claude `five_hour` is null).
+    var activeSession: Bool = true
     var measure: Measure = .quota
     /// Optional subtitle (model names, “API-equivalent from local logs”, …).
     var detail: String? = nil

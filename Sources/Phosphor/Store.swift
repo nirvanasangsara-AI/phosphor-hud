@@ -299,10 +299,11 @@ final class UsageStore: ObservableObject {
         var windows: [UsageWindow] = []
         var note: String?
         if let last = history.lastKnown(s.id), !last.windows.isEmpty {
-            // Burn rate and run-out time as they stood at that reading (dropped once that time has passed).
+            // Always attach a forecast line (rate, measuring, steady, or no session) so the row
+            // never goes blank while the token is waiting to refresh.
             windows = last.windows.map { w in
                 var w = w
-                if let f = history.forecast(provider: s.id, window: w, now: last.at), f.hitsLimitAt > Date() { w.forecast = f }
+                w.forecast = history.forecast(provider: s.id, window: w, now: Date())
                 return w
             }
             note = "cached \(Fmt.clock(last.at)) · 토큰 갱신 대기 · 로컬 로그 유지"
@@ -481,8 +482,9 @@ final class UsageStore: ObservableObject {
         guard !previous.isEmpty else {
             say("Raid assembled · \(online.count) online", .info, at: now)
             if let (s, w, f) = online.flatMap({ s in s.windows.compactMap { w in w.forecast.map { (s, w, $0) } } })
-                .filter({ $0.2.beforeReset }).min(by: { $0.2.hitsLimitAt < $1.2.hitsLimitAt }) {
-                say("\(s.info.name) \(w.label) runs dry at \(Fmt.clock(f.hitsLimitAt, now: now))", .warn, at: now)
+                .filter({ $0.2.warnsBeforeReset }).min(by: { ($0.2.hitsLimitAt ?? .distantFuture) < ($1.2.hitsLimitAt ?? .distantFuture) }),
+               let hits = f.hitsLimitAt {
+                say("\(s.info.name) \(w.label) runs dry at \(Fmt.clock(hits, now: now))", .warn, at: now)
             }
             return
         }
@@ -508,8 +510,9 @@ final class UsageStore: ObservableObject {
                     say("\(name) is Exhausted · \(w.label) at \(Int(w.usedPercent))%", .danger, at: now)
                 } else if pw.usedPercent < 90, w.usedPercent >= 90 {
                     say("\(name) \(w.label) is at \(Int(w.usedPercent))% · low HP", .danger, at: now)
-                } else if let f = w.forecast, f.beforeReset, pw.forecast?.beforeReset != true {
-                    say("\(name) \(w.label) runs dry at \(Fmt.clock(f.hitsLimitAt, now: now))", .warn, at: now)
+                } else if let f = w.forecast, f.warnsBeforeReset, pw.forecast?.warnsBeforeReset != true,
+                          let hits = f.hitsLimitAt {
+                    say("\(name) \(w.label) runs dry at \(Fmt.clock(hits, now: now))", .warn, at: now)
                 }
             }
         }

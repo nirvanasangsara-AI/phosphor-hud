@@ -181,7 +181,7 @@ Menu → **GitHub PRs & efficiency** (off by default) adds a strip under the hea
 - **Tier badge** placed within the [LinearB 2026 Software Engineering Benchmarks](https://linearb.io/resources/engineering-benchmarks) merge-frequency bands (Elite > 2.0 merged PRs/dev/week = top 10%, Good 1.2–2.0 = top 30%, Fair 0.66–1.2 = top 60%). There's no live leaderboard; above Elite it says "Top 10%" and nothing finer, since the report gives no finer split.
 - **Save Monthly Receipt** writes a PNG card to `~/Library/Application Support/Phosphor/receipts/` and copies it (and its text) to the clipboard.
 
-Burn rate (`+X.X%/h`) and the run-out time show on every quota bar with enough recent samples: 5-hour windows fit the last hour, weekly windows the last 6 hours. A cached Claude Code reading keeps the burn rate it had at that time.
+Burn rate (`+X.X%/h`) and the run-out time show on every quota bar. Two samples a few minutes apart are enough to fit a slope (5-hour windows still look at the last hour, weekly ones the last 6 hours). If a slope can't be fitted yet the row stays visible as `measuring pace · 0%/h`, `steady · ≈ X% at reset`, `▲ limit reached`, or `no active session` (when a 5-hour window isn't running). A cached Claude Code reading keeps a forecast line too.
 
 ### Calendar export
 

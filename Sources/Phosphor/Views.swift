@@ -262,7 +262,7 @@ struct ProviderRow: View {
                 Text(w.gauged ? "\(Int(w.usedPercent.rounded()))%" : (w.amountText ?? ""))
                     .font(theme.font(11, .bold))
                     .monospacedDigit()
-                    .foregroundStyle(w.forecast?.beforeReset == true ? theme.warn : color(for: w))
+                    .foregroundStyle(w.forecast?.warnsBeforeReset == true ? theme.warn : color(for: w))
             }
         }
     }
@@ -405,7 +405,8 @@ struct WindowLine: View {
     }
 }
 
-/// "▲ LIMIT 14:32 · 1h 12m" when you'll run dry before the reset, "≈ 82% AT RESET" otherwise.
+/// Status under every quota bar: rate and run-out time, or a standing label when a slope
+/// can't be fitted yet (measuring / steady / cap / no active session).
 struct ForecastLine: View {
     let f: Forecast
     let theme: Theme
@@ -413,23 +414,57 @@ struct ForecastLine: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if f.beforeReset {
-                Text(theme.name("▲ limit \(Fmt.clock(f.hitsLimitAt, now: now)) · in \(Fmt.countdown(to: f.hitsLimitAt, now: now))"))
-                    .foregroundStyle(theme.warn)
-            } else if let r = f.atReset {
-                Text(theme.name("≈ \(Int(r.rounded()))% at reset"))
-                    .foregroundStyle(theme.dim)
-            }
+            Text(theme.name(caption))
+                .foregroundStyle(emphasis ? theme.warn : theme.dim)
             Spacer(minLength: 0)
-            Text(theme.name("+\(rate)%/h"))
-                .foregroundStyle(f.beforeReset ? theme.warn : theme.dim)
+            if let rate {
+                Text(theme.name(rate))
+                    .foregroundStyle(emphasis ? theme.warn : theme.dim)
+            }
         }
-        .font(theme.font(10, f.beforeReset ? .semibold : .regular))
+        .font(theme.font(10, emphasis ? .semibold : .regular))
         .monospacedDigit()
         .lineLimit(1)
     }
 
-    private var rate: String {
+    private var emphasis: Bool { f.warnsBeforeReset || f.kind == .limitReached }
+
+    private var caption: String {
+        switch f.kind {
+        case .rate:
+            if f.warnsBeforeReset, let hits = f.hitsLimitAt {
+                return "▲ limit \(Fmt.clock(hits, now: now)) · in \(Fmt.countdown(to: hits, now: now))"
+            }
+            if let r = f.atReset {
+                return "≈ \(Int(r.rounded()))% at reset"
+            }
+            return "+\(rateValue)%/h"
+        case .steady:
+            if let r = f.atReset {
+                return "steady · ≈ \(Int(r.rounded()))% at reset"
+            }
+            return "steady"
+        case .measuring:
+            return "measuring pace"
+        case .limitReached:
+            if let r = f.resetsAt, r > now {
+                return "▲ limit reached · in \(Fmt.countdown(to: r, now: now))"
+            }
+            return "▲ limit reached"
+        case .noSession:
+            return "no active session"
+        }
+    }
+
+    private var rate: String? {
+        switch f.kind {
+        case .rate: return "+\(rateValue)%/h"
+        case .steady, .measuring: return "0%/h"
+        case .limitReached, .noSession: return nil
+        }
+    }
+
+    private var rateValue: String {
         f.ratePerHour >= 10 ? String(Int(f.ratePerHour.rounded())) : String(format: "%.1f", f.ratePerHour)
     }
 }
@@ -554,7 +589,8 @@ struct RaidFrame: View {
     private var hp: Double { primary?.remainingPercent ?? 0 }
     private var critical: Bool { snap.windows.contains { $0.usedPercent >= 90 } }
     private var doom: Forecast? {
-        snap.windows.compactMap(\.forecast).filter(\.beforeReset).min { $0.hitsLimitAt < $1.hitsLimitAt }
+        snap.windows.compactMap(\.forecast).filter(\.warnsBeforeReset)
+            .min { ($0.hitsLimitAt ?? .distantFuture) < ($1.hitsLimitAt ?? .distantFuture) }
     }
 
     private var hpColor: Color {
@@ -684,7 +720,7 @@ struct RaidFrame: View {
             }
             if revive { return ("Resurrected", Color(hex: "#FFD966")) }
             if snap.windows.contains(where: { $0.usedPercent >= 95 }) { return ("Exhausted", theme.danger) }
-            if let f = doom { return ("Out by \(Fmt.clock(f.hitsLimitAt, now: now))", theme.warn) }
+            if let f = doom, let hits = f.hitsLimitAt { return ("Out by \(Fmt.clock(hits, now: now))", theme.warn) }
             if snap.windows.allSatisfy({ $0.usedPercent < 10 }) { return ("Rested", theme.hpHigh) }
             return (snap.plan ?? "", theme.dim)
         }()
