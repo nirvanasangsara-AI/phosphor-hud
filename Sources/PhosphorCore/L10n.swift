@@ -107,11 +107,28 @@ public enum L10n {
         if raw == "logs" { return text("stale.logs", resolved: resolved) }
         return raw
     }
+
+    /// Known API credit titles (e.g. Codex "사용량 초기화") shown in the selected language.
+    public static func creditTitle(_ raw: String, language: AppLanguage,
+                                   preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        let resolved = language.resolve(preferredLanguages: preferredLanguages)
+        let n = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let key = creditTitleKeys[n] ?? creditTitleKeys[n.lowercased()] {
+            return text(key, resolved: resolved)
+        }
+        return raw
+    }
 }
 
 private let table: [ResolvedLanguage: [String: String]] = [
     .english: en,
     .korean: ko,
+]
+
+/// Aliases used by provider APIs, keyed as stored (or lowercased for Latin titles).
+private let creditTitleKeys: [String: String] = [
+    "사용량 초기화": "credit.usageReset",
+    "usage reset": "credit.usageReset",
 ]
 
 private let en: [String: String] = [
@@ -161,6 +178,7 @@ private let en: [String: String] = [
     "ollama.loaded": "running · currently loaded in memory",
     "logs.apiEquivalent": "API-equivalent from local logs",
     "logs.unpriced": "{0} tokens unpriced",
+    "credit.usageReset": "Usage Reset",
 
     // Menu / settings
     "menu.hideHUD": "Hide HUD",
@@ -259,6 +277,7 @@ private let ko: [String: String] = [
     "ollama.loaded": "실행 중 · 메모리에 로드됨",
     "logs.apiEquivalent": "로컬 로그 기준 API 환산",
     "logs.unpriced": "가격 없는 토큰 {0}",
+    "credit.usageReset": "사용량 초기화",
 
     "menu.hideHUD": "HUD 숨기기",
     "menu.showHUD": "HUD 보기",

@@ -303,7 +303,7 @@ struct ProviderRow: View {
                         .help(T.t("stale.help"))
                 }
                 ForEach(creditLines, id: \.self) { c in
-                    Text(theme.name("↻ \(c.title) \(c.amount)" + (c.expires.map { " · until \(Fmt.shortDate($0))" } ?? "")))
+                    Text(theme.name("↻ \(T.credit(c.title)) \(c.amount)" + (c.expires.map { " · until \(Fmt.shortDate($0))" } ?? "")))
                         .font(theme.font(9)).foregroundStyle(theme.tint(snap.info)).lineLimit(1)
                 }
             case .idle(let m, _):
@@ -802,7 +802,7 @@ struct AccountCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Reset & refill credits").font(.system(size: 10)).foregroundStyle(.secondary)
                 ForEach(account.credits, id: \.self) { c in
-                    Text("\(c.title) \(c.amount)" + (c.expires.map { " · expires \(Fmt.shortDate($0))" } ?? ""))
+                    Text("\(T.credit(c.title)) \(c.amount)" + (c.expires.map { " · expires \(Fmt.shortDate($0))" } ?? ""))
                         .font(.system(size: 12))
                 }
                 if let note = account.creditsNote {

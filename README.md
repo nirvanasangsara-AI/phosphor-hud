@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.png" width="420" alt="Phosphor HUD with demo data: Claude Code, Codex, Google AI group, Grok, Copilot, burn rates and run-out times">
+  <img src="docs/assets/hero.gif" width="420" alt="Live Phosphor HUD in English: Claude Code, Codex, Google AI, Grok, Copilot, Elite glow, weekly sparklines, and burn-rate / depletion lines">
 </p>
 
 <p align="center">
@@ -55,7 +55,7 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
   <img src="docs/screenshots/themes.gif" width="300" alt="Phosphor cycling through its themes">
 </p>
 
-<sub>Screenshots use the built-in demo data (`Phosphor --demo`), not a real account.</sub>
+<sub>The hero GIF is a live HUD recording (English). The chart and theme shots below use the built-in demo data (`Phosphor --demo`).</sub>
 
 ## Install
 

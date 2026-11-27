@@ -25,4 +25,8 @@ enum T {
     static func stale(_ raw: String, now: Date = Date()) -> String {
         L10n.staleText(raw, now: now, language: language)
     }
+
+    static func credit(_ raw: String) -> String {
+        L10n.creditTitle(raw, language: language)
+    }
 }

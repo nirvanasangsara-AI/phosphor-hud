@@ -50,6 +50,14 @@ import Testing
         #expect(L10n.tablesMatch)
     }
 
+    @Test func englishModeNormalizesCodexUsageResetTitle() {
+        #expect(L10n.creditTitle("사용량 초기화", language: .english) == "Usage Reset")
+        #expect(L10n.creditTitle("  사용량 초기화  ", language: .english) == "Usage Reset")
+        #expect(L10n.creditTitle("Usage Reset", language: .korean) == "사용량 초기화")
+        #expect(L10n.creditTitle("사용량 초기화", language: .korean) == "사용량 초기화")
+        #expect(L10n.creditTitle("Guest passes", language: .english) == "Guest passes")
+    }
+
     @Test func tokenWaitMarkerRecognizesNewAndLegacyPrefixes() {
         #expect(L10n.isTokenWaitMarker("token-refresh-waiting expired 1700000000"))
         #expect(L10n.isTokenWaitMarker("토큰 갱신 대기 · 로컬 로그 유지 · leftover"))
