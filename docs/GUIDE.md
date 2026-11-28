@@ -207,18 +207,17 @@ calendar apps such as 일정.
 ## Build & develop
 
 ```bash
-./scripts/build-app.sh            # dist/Phosphor.app (stable local identity, or ad-hoc in CI)
+./scripts/build-app.sh            # dist/Phosphor.app (version from the VERSION file)
 ./scripts/build-app.sh --run      # build and launch
 UNIVERSAL=1 ./scripts/build-app.sh  # arm64 + x86_64 (needs full Xcode)
 ./scripts/screenshots.sh          # regenerate docs/screenshots from --demo
 swift test                        # PhosphorCore unit tests (Swift Testing)
-./scripts/release.sh 0.2.0        # zip + sha256 for a GitHub release (see docs/RELEASE.md)
+./scripts/release.sh              # DMG + zip from VERSION (see docs/RELEASE.md)
 ```
 
 The app is split into `PhosphorCore` (Foundation-only logic: catalog, log parsing, pricing, alerts, status,
 export; unit-tested) and the `Phosphor` app target (SwiftUI/AppKit). A Homebrew cask template is in
 `../packaging/homebrew/phosphor.rb`.
 
-Prebuilt zips will be on Releases. They aren't notarized yet, so the first launch needs right-click → **Open**
-(or `xattr -dr com.apple.quarantine /Applications/Phosphor.app`).
+Prebuilt builds are on GitHub Releases as `Phosphor.dmg` (and `Phosphor.zip` if a disk image will not open). They aren't notarized yet, so the first launch needs a right-click → **Open**, or System Settings → Privacy & Security → **Open Anyway** on macOS 15+.
 

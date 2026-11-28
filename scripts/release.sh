@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# Builds a release zip of Phosphor.app and prints its sha256 (for the Homebrew cask).
+# Builds dist/Phosphor.dmg and dist/Phosphor.zip and prints their sha256.
 #
-#   ./scripts/release.sh 0.2.0
+#   ./scripts/release.sh
+#   ./scripts/release.sh 0.2.1     # optional; must match the VERSION file
 #
-# Signing is optional and never invented: set PHOSPHOR_SIGN_IDENTITY to a "Developer ID Application: …"
-# identity that exists in your keychain (see `security find-identity -v -p codesigning`). Without it the
-# app stays ad-hoc signed, as build-app.sh leaves it. Notarization: see docs/RELEASE.md.
+# The version is the VERSION file. Signing is optional and never invented: set
+# PHOSPHOR_SIGN_IDENTITY to a "Developer ID Application: …" identity that exists
+# in your keychain (see `security find-identity -v -p codesigning`). Without it
+# the app stays ad-hoc signed, as build-app.sh leaves it. Notarization: see docs/RELEASE.md.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:?usage: release.sh <version>}"
-export VERSION
+VERSION="$(tr -d '[:space:]' < VERSION)"
+if [[ $# -ge 1 && "$1" != "$VERSION" ]]; then
+  echo "error: $1 does not match VERSION ($VERSION). Edit the VERSION file, then run this script." >&2
+  exit 1
+fi
 
 swift test
 UNIVERSAL="${UNIVERSAL:-0}" ./scripts/build-app.sh
@@ -24,16 +29,29 @@ else
   echo "• PHOSPHOR_SIGN_IDENTITY not set: keeping the ad-hoc signature (users must right-click → Open)"
 fi
 
-ZIP="dist/Phosphor-$VERSION.zip"
+# Notarize the app before packing it, so the staple is inside the DMG and the zip.
+if [[ -n "${PHOSPHOR_NOTARY_PROFILE:-}" ]]; then
+  echo "• notarizing the app with keychain profile \$PHOSPHOR_NOTARY_PROFILE"
+  TMPZIP="$(mktemp "${TMPDIR:-/tmp}/phosphor-notarize.XXXXXX")"
+  rm -f "$TMPZIP"
+  ditto -c -k --keepParent "$APP" "$TMPZIP.zip"
+  xcrun notarytool submit "$TMPZIP.zip" --keychain-profile "$PHOSPHOR_NOTARY_PROFILE" --wait
+  rm -f "$TMPZIP.zip"
+  xcrun stapler staple "$APP"
+fi
+
+./scripts/make-dmg.sh
+
+ZIP="dist/Phosphor.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 if [[ -n "${PHOSPHOR_NOTARY_PROFILE:-}" ]]; then
-  echo "• notarizing with keychain profile \$PHOSPHOR_NOTARY_PROFILE"
-  xcrun notarytool submit "$ZIP" --keychain-profile "$PHOSPHOR_NOTARY_PROFILE" --wait
-  xcrun stapler staple "$APP"
-  rm -f "$ZIP" && ditto -c -k --keepParent "$APP" "$ZIP"
+  echo "• notarizing Phosphor.dmg"
+  xcrun notarytool submit "dist/Phosphor.dmg" --keychain-profile "$PHOSPHOR_NOTARY_PROFILE" --wait
+  xcrun stapler staple "dist/Phosphor.dmg"
 fi
 
+shasum -a 256 "dist/Phosphor.dmg" | tee "dist/Phosphor.dmg.sha256"
 shasum -a 256 "$ZIP" | tee "$ZIP.sha256"
-echo "✓ $ZIP — put the sha256 above into packaging/homebrew/phosphor.rb"
+echo "✓ dist/Phosphor.dmg and $ZIP — put the dmg sha256 into packaging/homebrew/phosphor.rb"
