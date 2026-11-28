@@ -20,6 +20,8 @@ final class DevStatsService: ObservableObject {
 
     private let demo: Bool
     private var timer: Timer?
+    /// Bumped when a newer refresh starts, so the older task cannot publish or save.
+    private var generation = RefreshGeneration()
 
     init(demo: Bool = false) {
         self.demo = demo
@@ -42,7 +44,7 @@ final class DevStatsService: ObservableObject {
             counts = try? dec.decode(DevCounts.self, from: d)
         }
         loadFX()
-        timer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: DevStatsSchedule.interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshIfDue() }
         }
     }
@@ -50,7 +52,10 @@ final class DevStatsService: ObservableObject {
     /// Empty text selects the account `gh` is signed in as. Anything else must be a GitHub login.
     func useAccount(_ raw: String) {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        // Drop any query already running for the previous login before it can save those counts back.
+        _ = generation.issue()
         counts = nil
+        busy = false
         try? FileManager.default.removeItem(at: Self.cacheFile)
         if trimmed.isEmpty {
             Prefs.shared.devAccount = ""
@@ -74,20 +79,31 @@ final class DevStatsService: ObservableObject {
     }
 
     func refreshIfDue(force: Bool = false) {
-        guard !demo, !busy, force || (counts.map { Date().timeIntervalSince($0.fetchedAt) > 300 } ?? true) else { return }
+        guard !demo else { return }
+        guard DevStatsSchedule.shouldStart(enabled: Prefs.shared.showDevStats, busy: busy, force: force,
+                                           fetchedAt: counts?.fetchedAt) else { return }
+        let ticket = generation.issue()
         busy = true
         Task {
-            defer { busy = false }
+            defer { if self.generation.isCurrent(ticket) { self.busy = false } }
             await updateFXIfStale()
-            guard let gh = Shell.which("gh") else { problem = "GitHub CLI (gh) not installed"; return }
+            guard generation.isCurrent(ticket) else { return }
+            guard let gh = Shell.which("gh") else {
+                problem = "GitHub CLI (gh) not installed"
+                return
+            }
             if let status = try? await Shell.run(gh, ["auth", "status"], timeout: 15, tolerateFailure: true) {
+                guard generation.isCurrent(ticket) else { return }
                 knownAccounts = GHAuthAccounts.logins(from: status)
             }
+            guard generation.isCurrent(ticket) else { return }
             let wanted = Prefs.shared.devAccount.trimmingCharacters(in: .whitespacesAndNewlines)
             let login: String
             if wanted.isEmpty {
                 guard let current = try? await Shell.run(gh, ["api", "user", "--jq", ".login"], timeout: 15), !current.isEmpty else {
-                    problem = "gh isn't signed in (gh auth login)"; return
+                    guard generation.isCurrent(ticket) else { return }
+                    problem = "gh isn't signed in (gh auth login)"
+                    return
                 }
                 login = current
             } else if let normalized = GHLogin.normalize(wanted),
@@ -95,17 +111,24 @@ final class DevStatsService: ObservableObject {
                       !found.isEmpty {
                 login = found
             } else {
+                guard generation.isCurrent(ticket) else { return }
                 counts = nil
                 problem = "unknown-account:\(wanted)"
                 return
             }
+            guard generation.isCurrent(ticket) else { return }
             var results: [String: Int] = [:]
             for q in GitHubQueries.all(login: login) {
+                guard generation.isCurrent(ticket) else { return }
                 // Search allows 30 requests a minute. 16 queries every 5 minutes stays inside that.
                 if let out = try? await Shell.run(gh, ["api", "-X", "GET", q.endpoint, "-f", "q=\(q.q)", "--jq", ".total_count"], timeout: 20),
                    let n = Int(out) { results[q.key] = n }
             }
-            guard results["merged30"] != nil else { problem = "GitHub search didn't answer"; return }
+            guard generation.isCurrent(ticket) else { return }
+            guard results["merged30"] != nil else {
+                problem = "GitHub search didn't answer"
+                return
+            }
             var c = GitHubQueries.counts(login: login, results: results)
             if let raw = try? await Shell.run(gh, ["api", "graphql", "-f", "query=\(GitHubQueries.mergedDailyGraphQL)",
                                                    "-f", "search=\(GitHubQueries.mergedDailySearch(login: login))"], timeout: 20),
@@ -113,7 +136,9 @@ final class DevStatsService: ObservableObject {
                let daily = MergedSeries.dailyCounts(dates: parsed.dates, total: parsed.total, now: Date(), timeZone: .current) {
                 c.mergedDaily = daily
             }
+            guard generation.isCurrent(ticket) else { return }
             let local = await Self.localCommits()
+            guard generation.isCurrent(ticket) else { return }
             c.localCommits7 = local.d7; c.localCommits30 = local.d30; c.localRepos = local.repos; c.localRoots = local.roots
             counts = c
             problem = nil

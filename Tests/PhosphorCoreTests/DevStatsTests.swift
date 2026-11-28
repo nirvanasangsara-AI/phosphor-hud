@@ -27,6 +27,22 @@ import Foundation
         #expect(!PRBenchmark.source.contains("Top 10%"))
     }
 
+    @Test func automaticRefreshRespectsTheStripAndAnInFlightAccountChange() {
+        let now = Date()
+        #expect(!DevStatsSchedule.shouldStart(enabled: false, busy: false, force: false, fetchedAt: nil, now: now))
+        #expect(DevStatsSchedule.shouldStart(enabled: false, busy: true, force: true, fetchedAt: now, now: now))
+        #expect(DevStatsSchedule.shouldStart(enabled: true, busy: false, force: false, fetchedAt: nil, now: now))
+        #expect(!DevStatsSchedule.shouldStart(enabled: true, busy: true, force: false, fetchedAt: nil, now: now))
+        #expect(!DevStatsSchedule.shouldStart(enabled: true, busy: false, force: false, fetchedAt: now, now: now))
+        #expect(DevStatsSchedule.shouldStart(enabled: true, busy: false, force: false, fetchedAt: now.addingTimeInterval(-300), now: now))
+
+        var generation = RefreshGeneration()
+        let first = generation.issue()
+        let second = generation.issue()
+        #expect(generation.isCurrent(second))
+        #expect(!generation.isCurrent(first))
+    }
+
     @Test func roiAndCurrency() throws {
         let usd = try #require(ROI.usd(["KRW": 1_344_500, "USD": 200], unitsPerUSD: ["KRW": 1344.5]))
         #expect(abs(usd - 1200) < 1e-6)

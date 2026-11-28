@@ -239,6 +239,33 @@ public enum PRBenchmark {
     }
 }
 
+/// When the PR strip is allowed to call GitHub. A forced refresh always starts, so an account change
+/// is not dropped while an older query is still running.
+public enum DevStatsSchedule {
+    public static let interval: TimeInterval = 300
+
+    public static func shouldStart(enabled: Bool, busy: Bool, force: Bool, fetchedAt: Date?, now: Date = Date()) -> Bool {
+        if force { return true }
+        guard enabled, !busy else { return false }
+        guard let fetchedAt else { return true }
+        return now.timeIntervalSince(fetchedAt) >= interval
+    }
+}
+
+/// Tickets for in-flight GitHub refreshes. Publishing is allowed only for the latest ticket,
+/// so a query started for the previous account cannot overwrite the account the user just chose.
+public struct RefreshGeneration: Equatable, Sendable {
+    public private(set) var current = 0
+    public init() {}
+
+    public mutating func issue() -> Int {
+        current += 1
+        return current
+    }
+
+    public func isCurrent(_ ticket: Int) -> Bool { ticket == current }
+}
+
 /// Subscription return: what your logged use would cost on the API, against what the plans cost.
 public enum ROI {
     /// Converts {"KRW": 290000, "USD": 20} to USD with rates given as units per 1 USD; nil if a rate is missing.
