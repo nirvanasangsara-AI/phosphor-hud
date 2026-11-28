@@ -82,6 +82,11 @@ public enum ResetFeed {
         }
     }
 
+    /// What the ticker shows right now: expired lines are gone even if the last fetch is still cached.
+    public static func display(_ items: [Item], includeRumors: Bool, now: Date = Date()) -> [Item] {
+        filtered(droppingExpired(items, now: now), includeRumors: includeRumors)
+    }
+
     /// Official and status items come first. Rumors are omitted when `includeRumors` is false.
     public static func filtered(_ items: [Item], includeRumors: Bool) -> [Item] {
         items.filter { includeRumors || !$0.isRumor }

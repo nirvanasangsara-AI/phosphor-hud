@@ -8,6 +8,8 @@
  * The token is never written into the feed.
  */
 
+import { expectedReset } from "./time.mjs";
+
 interface Env {
   RESET_FEED: {
     get(key: string): Promise<string | null>;
@@ -98,13 +100,17 @@ async function xItems(env: Env, now: Date): Promise<FeedItem[]> {
   const byId = new Map((users.data ?? []).map((user) => [user.id, user.username]));
   const out: FeedItem[] = [];
   for (const user of users.data ?? []) {
-    const timeline = await xJSON(
-      token,
-      `/2/users/${user.id}/tweets?max_results=5&exclude=retweets,replies&tweet.fields=created_at`,
-    ) as { data?: { id: string; text: string; created_at?: string }[] };
-    for (const tweet of timeline.data ?? []) {
-      if (!RELEVANT.test(tweet.text)) continue;
-      out.push(tweetItem(tweet, user.username, "official", now));
+    try {
+      const timeline = await xJSON(
+        token,
+        `/2/users/${user.id}/tweets?max_results=5&exclude=retweets,replies&tweet.fields=created_at`,
+      ) as { data?: { id: string; text: string; created_at?: string }[] };
+      for (const tweet of timeline.data ?? []) {
+        if (!RELEVANT.test(tweet.text)) continue;
+        out.push(tweetItem(tweet, user.username, "official", now));
+      }
+    } catch (error) {
+      console.log("timeline skipped", user.username, error instanceof Error ? error.message : error);
     }
   }
   const query = [
@@ -114,21 +120,25 @@ async function xItems(env: Env, now: Date): Promise<FeedItem[]> {
     ...AVOID.map((name) => `-from:${name}`),
     ...ALLOW.map((name) => `-from:${name}`),
   ].join(" ");
-  const search = await xJSON(
-    token,
-    `/2/tweets/search/recent?max_results=10&tweet.fields=created_at,author_id&expansions=author_id&user.fields=username&query=${encodeURIComponent(query)}`,
-  ) as {
-    data?: { id: string; text: string; created_at?: string; author_id?: string }[];
-    includes?: { users?: { id: string; username: string }[] };
-  };
-  const names = new Map(byId);
-  for (const user of search.includes?.users ?? []) names.set(user.id, user.username);
-  for (const tweet of search.data ?? []) {
-    const handle = names.get(tweet.author_id ?? "") ?? "unknown";
-    if (AVOID.some((name) => name.toLowerCase() === handle.toLowerCase())) continue;
-    if (!RELEVANT.test(tweet.text)) continue;
-    const official = ALLOW.some((name) => name.toLowerCase() === handle.toLowerCase());
-    out.push(tweetItem(tweet, handle, official ? "official" : "rumor", now));
+  try {
+    const search = await xJSON(
+      token,
+      `/2/tweets/search/recent?max_results=10&tweet.fields=created_at,author_id&expansions=author_id&user.fields=username&query=${encodeURIComponent(query)}`,
+    ) as {
+      data?: { id: string; text: string; created_at?: string; author_id?: string }[];
+      includes?: { users?: { id: string; username: string }[] };
+    };
+    const names = new Map(byId);
+    for (const user of search.includes?.users ?? []) names.set(user.id, user.username);
+    for (const tweet of search.data ?? []) {
+      const handle = names.get(tweet.author_id ?? "") ?? "unknown";
+      if (AVOID.some((name) => name.toLowerCase() === handle.toLowerCase())) continue;
+      if (!RELEVANT.test(tweet.text)) continue;
+      const official = ALLOW.some((name) => name.toLowerCase() === handle.toLowerCase());
+      out.push(tweetItem(tweet, handle, official ? "official" : "rumor", now));
+    }
+  } catch (error) {
+    console.log("rumor search skipped", error instanceof Error ? error.message : error);
   }
   return out;
 }
@@ -211,25 +221,6 @@ function expires(posted: string, expected: string | null, kind: Kind): string {
   const base = expected ? Date.parse(expected) : Date.parse(posted);
   const hours = expected ? 6 : kind === "rumor" ? 36 : kind === "status" ? 48 : 72;
   return new Date(base + hours * 3_600_000).toISOString();
-}
-
-function expectedReset(text: string, posted: Date): string | null {
-  const match = text.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?[^\d]{0,12}(\d{1,2}):(\d{2})\s*(KST|UTC|GMT|PT|PST|PDT|ET|EST|EDT)?/i);
-  if (!match) return null;
-  let month = Number(match[1]);
-  let day = Number(match[2]);
-  let year = match[3] ? Number(match[3]) : posted.getUTCFullYear();
-  if (month > 12 && day <= 12) {
-    const swap = month;
-    month = day;
-    day = swap;
-  }
-  if (year < 100) year += 2000;
-  const zone = (match[6] || "UTC").toUpperCase();
-  const offset = zone.startsWith("K") ? 9 : zone.startsWith("P") ? -8 : zone.startsWith("E") ? -5 : 0;
-  const utc = Date.UTC(year, month - 1, day, Number(match[4]) - offset, Number(match[5]));
-  if (Number.isNaN(utc)) return null;
-  return new Date(utc).toISOString();
 }
 
 function productOf(text: string): string {

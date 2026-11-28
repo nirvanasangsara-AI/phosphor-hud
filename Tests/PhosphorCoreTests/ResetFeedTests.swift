@@ -46,6 +46,10 @@ import Testing
         #expect(all.map(\.id) == ["official", "status", "rumor"])
         let quiet = ResetFeed.filtered([rumor, status, official], includeRumors: false)
         #expect(quiet.map(\.id) == ["official", "status"])
+        let stale = item("stale", kind: .official, official: true, posted: now.addingTimeInterval(-100),
+                         expires: now.addingTimeInterval(-5))
+        let shown = ResetFeed.display([stale, rumor, official], includeRumors: true, now: now)
+        #expect(shown.map(\.id) == ["official", "rumor"])
     }
 
     @Test func statusRSSBecomesTickerItems() {

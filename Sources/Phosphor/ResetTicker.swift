@@ -17,8 +17,8 @@ final class ResetFeedService: ObservableObject {
         if demo { items = Self.demoItems }
     }
 
-    func visible(includeRumors: Bool) -> [ResetFeed.Item] {
-        ResetFeed.filtered(items, includeRumors: includeRumors)
+    func visible(includeRumors: Bool, now: Date = Date()) -> [ResetFeed.Item] {
+        ResetFeed.display(items, includeRumors: includeRumors, now: now)
     }
 
     func refreshIfDue(force: Bool = false) {
