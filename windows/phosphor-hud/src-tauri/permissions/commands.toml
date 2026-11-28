@@ -1,0 +1,24 @@
+[[permission]]
+identifier = "allow-hud-state"
+description = "Read the current HUD snapshot."
+commands.allow = ["hud_state"]
+
+[[permission]]
+identifier = "allow-hide-hud"
+description = "Hide the HUD window."
+commands.allow = ["hide_hud"]
+
+[[permission]]
+identifier = "allow-show-hud"
+description = "Show the HUD window."
+commands.allow = ["show_hud"]
+
+[[permission]]
+identifier = "allow-set-demo"
+description = "Toggle demo numbers."
+commands.allow = ["set_demo"]
+
+[[permission]]
+identifier = "allow-set-show-dev"
+description = "Toggle GitHub PR counts."
+commands.allow = ["set_show_dev"]

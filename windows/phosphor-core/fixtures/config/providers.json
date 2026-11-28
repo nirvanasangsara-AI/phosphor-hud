@@ -1,0 +1,3 @@
+[
+  {"id": "team-gateway", "name": "Team Gateway", "color": "#20B8CD", "command": "~/.config/phosphor/scripts/manual.sh team-gateway"}
+]

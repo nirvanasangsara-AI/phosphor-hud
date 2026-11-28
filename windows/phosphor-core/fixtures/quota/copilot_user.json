@@ -1,0 +1,10 @@
+{
+  "quota_reset_date_utc": "2026-12-01T00:00:00Z",
+  "access_type_sku": "pro",
+  "copilot_plan": "individual",
+  "quota_snapshots": {
+    "premium_interactions": {"unlimited": false, "entitlement": 100, "percent_remaining": 46},
+    "chat": {"unlimited": false, "entitlement": 100, "percent_remaining": 88},
+    "completions": {"unlimited": true}
+  }
+}

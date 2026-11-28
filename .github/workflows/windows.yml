@@ -1,0 +1,49 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the Rust core
+        run: cargo test --manifest-path windows/phosphor-core/Cargo.toml --locked
+
+      - name: Install the Tauri CLI
+        working-directory: windows/phosphor-hud
+        run: npm ci
+
+      - name: Build the installer
+        working-directory: windows/phosphor-hud
+        run: npm run tauri build
+
+      - name: Zip the portable exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item windows/phosphor-hud/src-tauri/target/release/Phosphor.exe dist/Phosphor.exe
+          Compress-Archive -Path dist/Phosphor.exe -DestinationPath dist/Phosphor-Windows.zip -Force
+
+      - name: Upload installer and zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Phosphor-Windows
+          path: |
+            windows/phosphor-hud/src-tauri/target/release/bundle/nsis/*.exe
+            dist/Phosphor-Windows.zip
+          if-no-files-found: error

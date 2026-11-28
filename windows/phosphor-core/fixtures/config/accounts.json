@@ -1,0 +1,7 @@
+{"profiles":[
+  {"provider":"codex","name":"Work","home":"~/.codex-work"},
+  {"provider":"claude","name":"side","configDir":"~/.claude-side"},
+  {"provider":"codex","name":"nohome"},
+  {"provider":"cursor","name":"x"},
+  {"provider":"codex","name":"work","home":"/x"}
+]}

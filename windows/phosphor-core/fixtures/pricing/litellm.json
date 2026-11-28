@@ -1,0 +1,7 @@
+{
+  "sample_spec": {"input_cost_per_token": 0},
+  "claude-sonnet-5": {"input_cost_per_token": 3e-06, "output_cost_per_token": 1.5e-05, "cache_read_input_token_cost": 3e-07, "cache_creation_input_token_cost": 3.75e-06},
+  "gpt-6-astra": {"input_cost_per_token": 1e-05, "output_cost_per_token": 5e-05},
+  "gemini/gemini-3-pro": {"input_cost_per_token": 2e-06, "output_cost_per_token": 1.2e-05},
+  "embedding-only": {"input_cost_per_token": 1e-07}
+}

@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="#install">Install</a> · <a href="#features">Features</a> · <a href="#privacy">Privacy</a> · <a href="docs/GUIDE.md">Full guide</a> · <a href="#한국어">한국어</a>
+  <a href="#install">Install</a> · <a href="#windows">Windows</a> · <a href="#features">Features</a> · <a href="#privacy">Privacy</a> · <a href="docs/GUIDE.md">Full guide</a> · <a href="#한국어">한국어</a>
 </p>
 
 ---
@@ -70,6 +70,60 @@ macOS 14+ and the Xcode Command Line Tools. To try it without logging in to anyt
 Prebuilt zips will be attached to Releases. They aren't notarized yet, so the first time you open the app, use right-click → **Open**.
 A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
 
+## Windows
+
+The Mac app is SwiftUI. The part worth sharing is PhosphorCore: forecast slopes, alerts, log parsing, and list-price math, with no AppKit in it. The Windows build is a [Tauri 2](https://v2.tauri.app/) shell around a Rust port of that core. Tauri draws the HUD in the system webview, so the download is one small installer instead of a bundled browser, and the numbers stay locked to the Mac tests with golden fixtures.
+
+You get a small always-on-top window you can drag, and a tray icon with Show, Hide, Start at login, and Quit. It reads the same `providers.json`, `accounts.json`, `billing-screens.json`, and `alerts.json` shapes as the Mac build.
+
+### Install
+
+Windows 10 or 11, with the WebView2 runtime (already present on current Windows 11). From a clone:
+
+```bash
+cd windows/phosphor-hud
+npm install
+npm run tauri build
+```
+
+The NSIS installer is under `windows/phosphor-hud/src-tauri/target/release/bundle/nsis/`. A portable `Phosphor.exe` is next to it in `target/release/`. GitHub Actions on `windows-latest` builds the same thing and uploads it as an artifact. Rust and Node are only needed if you build it yourself.
+
+`npm run tauri dev` runs it unpacked. The core tests alone are `cargo test --manifest-path windows/phosphor-core/Cargo.toml`.
+
+### What works
+
+Live limits when the official CLI has already written a local token file, plus token totals from session logs. The forecast line (`▲ limit …`, `measuring pace`, `steady`, `no active session`) uses the same slope rules as on the Mac. Subscription ROI uses local logs against plan prices in `billing-screens.json`. GitHub PR counts are optional, from the tray, and only through `gh`.
+
+The privacy rules match the Mac app. Phosphor reads local files. When a CLI has already saved a token in its own file, that token is sent only to that provider's usage API and is not stored or printed. The public LiteLLM price table and a public exchange rate are downloaded so ROI can be priced. Browser cookies and Windows Credential Manager are never read.
+
+| Source | Windows path | Confidence |
+|---|---|---|
+| Claude Code token | `%USERPROFILE%\.claude\.credentials.json` (or `CLAUDE_CONFIG_DIR`) | Official Claude Code docs |
+| Claude Code logs | `%USERPROFILE%\.claude\projects` | Inferred from the Mac reader |
+| Codex sessions | `%CODEX_HOME%\sessions` if set, else `%USERPROFILE%\.codex\sessions` and `%APPDATA%\codex` | `CODEX_HOME` is official. The two default folders disagree in third-party notes, so both are checked |
+| Codex login | `auth.json` in that home | Official only when `cli_auth_credentials_store` is `file`. Windows Credential Manager is not read |
+| Gemini CLI logs | `%USERPROFILE%\.gemini\tmp` | Official Gemini CLI layout |
+| Grok CLI login | `%USERPROFILE%\.grok\auth.json` | Unverified. Medium confidence, same file the Mac build reads |
+| Copilot | `gh.exe auth token` | Official GitHub CLI. The token stays in memory for one request |
+| Cline tasks | `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev` | Unverified |
+| Roo Code tasks | `%APPDATA%\<host>\User\globalStorage\rooveterinaryinc.roo-cline` | Unverified |
+| Phosphor config | `%USERPROFILE%\.config\phosphor` | Same files as macOS |
+
+Antigravity, Muse, and Grok Bot are unknown on Windows. Their rows stay visible and say so, instead of failing or inventing a number.
+
+WSL is not searched. A Windows Phosphor does not read `\\wsl$\` or a Linux home. If the CLIs live in WSL, use them from Linux, or install the Windows CLIs so they write under `%USERPROFILE%`.
+
+### Known limits
+
+This is the first Windows cut. It has not been clicked through on a physical PC in this repo's own check, beyond the Windows CI build.
+
+- Codex and Grok tokens are not refreshed. If the access token is expired, the row says so. Phosphor will not write `auth.json` and will not open Credential Manager.
+- Claude Code's refresh token is not used, same as on the Mac. An expired access token with a refresh token still on disk shows "Waiting for token refresh" and keeps local logs.
+- Spend for OpenRouter, OpenAI API, and Anthropic API keys is not fetched. If the environment variable is set, the row says the key is present and stops there.
+- Themes, Korean UI, menu-bar percent, calendar export, and local git commit counts are still Mac-only.
+- Alerts show inside the HUD. There is no Windows toast yet.
+- The window is translucent, but WebView2 does not match the Mac material, and some machines draw a thin light edge.
+
 ## Privacy
 
 - **No cookie or session scraping, no browser automation, no password prompts.** Phosphor reads only what the official tools already keep for you:
@@ -101,6 +155,7 @@ swift test                    # PhosphorCore unit tests
 - 기본 언어는 영어이며, 앱에서 영어 / 한국어 / macOS 시스템 언어를 고를 수 있습니다. 메뉴, 설정, 소진율·예상 소진 안내가 선택한 언어로 바뀝니다.
 - 로컬 로그를 API 정가로 환산해 **구독 ROI**를 계산하고, `gh` 로그인으로 **GitHub PR·커밋 효율**을 보여 줍니다. 등급 배지는 LinearB 2026 공개 벤치마크 기준입니다.
 - 쿠키·세션 스크래핑은 하지 않습니다. 각 공식 도구가 이미 저장해 둔 값만 읽고, 토큰은 출력하거나 저장하지 않습니다.
+- Windows용 첫 빌드도 같은 계산을 씁니다. 설치와 아직 안 되는 항목은 위의 Windows 절에 있습니다. 화면 문구는 영어입니다.
 
 ## License
 
