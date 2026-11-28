@@ -1,0 +1,10 @@
+{
+  "window": "7d",
+  "builtAt": "2026-11-28",
+  "bundled": true,
+  "source": "Shipped analysis snapshot (2026-11-28). 11 public PRs opened in 7 days is the top 10–20%. Top 5% is 22–41 public PRs per week. The worker has not published a GH Archive sample yet.",
+  "bands": [
+    { "countLow": 11, "countHigh": 11, "topPercentLow": 10, "topPercentHigh": 20 }
+  ],
+  "nextTier": { "topPercent": 5, "perWeekLow": 22, "perWeekHigh": 41 }
+}

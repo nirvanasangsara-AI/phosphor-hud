@@ -56,7 +56,7 @@ import Foundation
     @Test func queriesAndCounts() {
         let now = ISO8601DateFormatter().date(from: "2026-11-27T02:00:00+09:00")!
         let q = GitHubQueries.all(login: "octo", now: now, tz: TimeZone(identifier: "Asia/Seoul")!)
-        #expect(q.count == 16)
+        #expect(q.count == 18)
         #expect(q.first { $0.key == "merged30" }?.q == "author:octo type:pr is:merged merged:>=2026-10-27")
         #expect(q.first { $0.key == "merged30Prev" }?.q == "author:octo type:pr is:merged merged:\(GitHubQueries.day(now.addingTimeInterval(-60 * 86_400)))..\(GitHubQueries.day(now.addingTimeInterval(-31 * 86_400)))")
         #expect(q.first { $0.key == "mergedToday" }?.q.hasSuffix("merged:>=2026-11-26T15:00:00Z") == true)

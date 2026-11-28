@@ -172,9 +172,13 @@ The pin on the header is filled and labelled **고정** while it is holding the 
 
 **표시할 서비스** lists every provider. **자동** is the default. **항상 표시** forces the row on. **숨김** forces it off. Under **자동**, a row needs recent non-zero use: a quota above 0%, tokens in the last 30 days, API spend, or a model loaded in Ollama. A login file, an install, a config file, or a billing-screen reading does not open a row. LM Studio only lists models, so that row stays off until you choose **항상 표시**.
 
-The PR strip reads `30d 83 · 2.8/day · ~19/wk` and `today 7 · 2.5× avg` (this week gets the same kind of multiple). Those are the last 30 days split into a day and a week, then today and this week divided by those averages. There is no "top X% of GitHub authors" line. No published table gives individual-author percentiles we can cite. Octoverse publishes totals. LinearB's bands are team rates.
+The PR strip is two lines. The bright line is today against the 30-day daily average (`today 7 · 2.5× avg`). The next line is `30d 83 · 2.8/day · ~19/wk`. Merged counts on those lines include private pull requests and are only the user's own numbers.
 
-The gold chip is labeled **팀 기준**. It is LinearB 2026 merge frequency, a team average per developer per week (`Elite band · 18.0 PR/wk (benchmark >2.0)`), and it shimmers when the rate is Elite. Reduce Motion leaves a still glow. It is not a personal rank and not a monthly goal. A per-person comparison with a fleet such as Grok Bot is omitted: public notes give how many people landed a PR, not a headcount to divide by.
+The rank line uses public pull requests opened in the last 7 days. With the shipped table, 11 of those reads **개인 상위 10–20%**, as bright as the today count. Beside it, dimmed: **다음 5% · 22–41/주**, and the date `2026-11-28`. Any other count hides the rank line. A configured rank URL that fails also hides it. An empty URL shows this snapshot. There is no week-over-week arrow on the rank.
+
+No fuller individual-author percentile for GitHub was published in a form that can be cited. The worker in [`workers/pr-rank`](workers/pr-rank) can replace the snapshot. CI does not deploy it. GitHub search totals cap at 1,000, so the worker scales a 1% hour sample by the hours it read, and fits a lognormal and a power law. A short sample does not publish a table.
+
+The Elite chip is a thin outline. The outline still shimmers on the same period as before. The help text marks it **팀 기준**: LinearB's team rate, not a personal rank. A per-person fleet comparison is omitted. Public notes on Grok Bot give how many people landed a PR, not a headcount.
 
 ## 0.3.3
 

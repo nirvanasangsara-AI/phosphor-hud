@@ -54,34 +54,39 @@ struct DevStatsView: View {
         let stale = Date().timeIntervalSince(c.fetchedAt) > 600
         VStack(alignment: .leading, spacing: 2) {
             let pace = c.mergePace()
-            HStack(spacing: 6) {
-                Text(theme.name(T.t("dev.thisWeek", "\(c.merged7)")))
-                    .font(theme.font(15, .semibold)).foregroundStyle(theme.fg)
-                if let multiple = pace.weekMultiple {
-                    Text(theme.name(T.t("dev.weekPace", DevCounts.multiple(multiple))))
-                        .font(theme.font(12, .semibold)).foregroundStyle(theme.fg)
-                }
-                UsageSparkline(values: c.prSparkline().map(Double.init), tint: theme.fg, width: 64,
-                               helpText: c.mergedDaily == nil ? "Merged PRs, four weeks" : "Merged PRs, last 14 days")
-                Spacer(minLength: 4)
-                Text(theme.name(pace.todayMultiple.map { T.t("dev.todayPace", "\(c.mergedToday)", DevCounts.multiple($0)) }
-                                 ?? T.t("dev.today", "\(c.mergedToday)")))
-                    .font(theme.font(12, .semibold)).foregroundStyle(theme.fg)
-            }
-            .lineLimit(1).minimumScaleFactor(0.75)
+            Text(theme.name(pace.todayMultiple.map { T.t("dev.todayPace", "\(c.mergedToday)", DevCounts.multiple($0)) }
+                             ?? T.t("dev.today", "\(c.mergedToday)")))
+                .font(theme.font(15, .semibold))
+                .foregroundStyle(theme.fg)
+                .lineLimit(1)
             HStack(spacing: 6) {
                 Text(theme.name(T.t("dev.summary", "\(c.merged30)", DevCounts.dayRate(pace.perDay), DevCounts.weekRate(pace.perWeek))))
+                    .font(theme.font(12))
                     .foregroundStyle(theme.fg)
-                    .help("Merged PRs in the last 30 days, divided into a daily average and a weekly average. Today and this week are multiples of those averages. Not a goal percent.")
+                    .lineLimit(1)
                 Spacer(minLength: 4)
                 PlacementBadge(label: e.placement.label, elite: e.placement.tier == "Elite", theme: theme)
-                    .help(PRBenchmark.source)
-                Text(theme.name(T.t("dev.teamMark")))
-                    .font(theme.font(9, .semibold))
-                    .foregroundStyle(theme.dim)
-                    .help("LinearB's merge-frequency bands are team averages per developer per week, not a personal rank among GitHub authors.")
+                    .help(PRBenchmark.source + " " + T.t("dev.teamMark"))
             }
-            .font(theme.font(11)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+            if let hit = rankHit(c) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(theme.name(T.t("dev.rank", "\(hit.topPercentLow)", "\(hit.topPercentHigh)")))
+                        .font(theme.font(15, .semibold))
+                        .foregroundStyle(theme.fg)
+                        .lineLimit(1)
+                    if let next = hit.next {
+                        Text(theme.name(T.t("dev.rankNext", "\(next.topPercent)", "\(next.perWeekLow)", "\(next.perWeekHigh)")))
+                            .font(theme.font(9))
+                            .foregroundStyle(theme.dim)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text(hit.builtAt)
+                        .font(theme.font(9))
+                        .foregroundStyle(theme.dim)
+                }
+                .help(dev.rankTable?.source ?? "")
+            }
             HStack(spacing: 6) {
                 Text("@\(c.login)").foregroundStyle(theme.dim)
                 Text(theme.name(T.t("dev.updated", T.clock(c.fetchedAt))))
@@ -103,11 +108,16 @@ struct DevStatsView: View {
             .font(theme.font(10)).monospacedDigit().lineLimit(1)
         }
     }
+
+    /// Rank of public pull requests only. Nil hides the line.
+    private func rankHit(_ counts: DevCounts) -> PRRankTable.Hit? {
+        guard let table = dev.rankTable, let opened = counts.publicOpened7 else { return nil }
+        return table.lookup(publicCount: opened)
+    }
 }
 
-/// The Elite band chip breathes gold. Other bands stay quiet. Reduce Motion keeps a still glow.
-/// The label is the real PR/week rate. LinearB's published "top 10%" is the ceiling of that band,
-/// not a personal monthly goal, so the chip does not freeze on 10%.
+/// Elite keeps a thin outline. The outline shimmers on the same two periods as before.
+/// The fill, the halo, and the gold are gone so the chip stays quiet on Clean.
 struct PlacementBadge: View {
     let label: String
     let elite: Bool
@@ -126,38 +136,21 @@ struct PlacementBadge: View {
     }
 
     private func chip(at date: Date?) -> some View {
-        let gold = Color(hex: "#F0D48A")
-        let amber = Color(hex: "#E8A34A")
-        let breath = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 2.8) } ?? 0.62
         let shimmer = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 3.6 + 0.7) } ?? 0.35
         let title = Text(theme.name(label))
             .font(theme.font(9, .bold))
-            .foregroundStyle(elite ? Color(hex: "#F7E7B4") : theme.dim)
+            .foregroundStyle(elite ? theme.fg : theme.dim)
             .padding(.horizontal, 6).padding(.vertical, 1)
             .fixedSize()
         return title
             .background {
                 if elite {
-                    ZStack {
-                        Capsule()
-                            .fill(amber.opacity(0.28 + 0.32 * breath))
-                            .blur(radius: 5 + 2.5 * breath)
-                            .scaleEffect(x: 1.18 + 0.08 * breath, y: 1.55 + 0.20 * breath)
-                        Capsule()
-                            .fill(LinearGradient(colors: [gold.opacity(0.30 + 0.16 * breath), amber.opacity(0.22 + 0.14 * breath)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Capsule()
-                            .strokeBorder(
-                                LinearGradient(colors: [Color.white.opacity(0.25 + 0.35 * shimmer), gold.opacity(0.85), amber.opacity(0.55)],
-                                               startPoint: UnitPoint(x: -0.2 + shimmer, y: 0),
-                                               endPoint: UnitPoint(x: 0.4 + shimmer, y: 1)),
-                                lineWidth: 0.9)
-                    }
+                    Capsule()
+                        .strokeBorder(theme.fg.opacity(0.35 + 0.45 * shimmer), lineWidth: 1)
                 } else {
-                    Capsule().fill(theme.fg.opacity(0.08))
+                    Capsule().strokeBorder(theme.fg.opacity(0.16), lineWidth: 1)
                 }
             }
-            .shadow(color: elite ? gold.opacity(0.35 + 0.45 * breath) : .clear, radius: elite ? (4 + 3.5 * breath) : 0)
             .accessibilityLabel(label)
     }
 }

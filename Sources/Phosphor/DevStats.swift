@@ -13,6 +13,8 @@ final class DevStatsService: ObservableObject {
     @Published private(set) var fxDate: String?
     /// Logins from `gh auth status`. Tokens in that output are discarded.
     @Published private(set) var knownAccounts: [String] = []
+    /// Public-PR percentile table. Nil hides the rank line (a configured URL failed, or the count is outside the table).
+    @Published var rankTable: PRRankTable?
 
     static var cacheFile: URL { Paths.support.appendingPathComponent("dev-stats.json") }
     static var fxFile: URL { Paths.caches.appendingPathComponent("fx-usd.json") }
@@ -33,10 +35,13 @@ final class DevStatsService: ObservableObject {
             c.commitsToday = 9; c.commits7 = 142; c.commits30 = 583
             c.mergedWeeks = [18, 15, 21, 14]; c.commitWeeks = [142, 131, 170, 119]
             c.merged30Prev = 60
+            c.publicOpened7 = 11
+            c.publicOpened30 = 40
             c.mergedDaily = [1, 0, 2, 1, 3, 2, 1, 0, 2, 1, 2, 1, 0, 2]
             c.localCommits7 = 96; c.localCommits30 = 402; c.localRepos = 6
             c.localRoots = ["~/Projects", "~/Developer", "~/code", "~/src", "~/workspace"]
             counts = c
+            rankTable = .bundled
             return
         }
         if let d = try? Data(contentsOf: Self.cacheFile) {
@@ -44,6 +49,7 @@ final class DevStatsService: ObservableObject {
             counts = try? dec.decode(DevCounts.self, from: d)
         }
         loadFX()
+        rankTable = Prefs.shared.prRankURL.isEmpty ? .bundled : nil
         timer = Timer.scheduledTimer(withTimeInterval: DevStatsSchedule.interval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshIfDue() }
         }
@@ -80,6 +86,7 @@ final class DevStatsService: ObservableObject {
 
     func refreshIfDue(force: Bool = false) {
         guard !demo else { return }
+        Task { await self.loadRank() }
         guard DevStatsSchedule.shouldStart(enabled: Prefs.shared.showDevStats, busy: busy, force: force,
                                            fetchedAt: counts?.fetchedAt) else { return }
         let ticket = generation.issue()
@@ -120,7 +127,7 @@ final class DevStatsService: ObservableObject {
             var results: [String: Int] = [:]
             for q in GitHubQueries.all(login: login) {
                 guard generation.isCurrent(ticket) else { return }
-                // Search allows 30 requests a minute. 16 queries every 5 minutes stays inside that.
+                // Search allows 30 requests a minute. These queries every 5 minutes stay inside that.
                 if let out = try? await Shell.run(gh, ["api", "-X", "GET", q.endpoint, "-f", "q=\(q.q)", "--jq", ".total_count"], timeout: 20),
                    let n = Int(out) { results[q.key] = n }
             }
@@ -159,6 +166,35 @@ final class DevStatsService: ObservableObject {
         try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
         try? enc.encode(c).write(to: Self.cacheFile, options: .atomic)
     }
+
+    /// Empty URL uses the dated snapshot. A configured URL that fails hides the rank line.
+    func loadRank() async {
+        let raw = Prefs.shared.prRankURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty, let url = URL(string: raw) else {
+            rankTable = .bundled
+            return
+        }
+        let cache = Self.rankCache
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: cache.path),
+           let modified = attrs[.modificationDate] as? Date,
+           Date().timeIntervalSince(modified) < 86_400,
+           let data = try? Data(contentsOf: cache),
+           let table = PRRankTable.decode(data) {
+            rankTable = table
+            return
+        }
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let table = PRRankTable.decode(data) else {
+            rankTable = nil
+            return
+        }
+        try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
+        try? data.write(to: cache, options: .atomic)
+        rankTable = table
+    }
+
+    private static var rankCache: URL { Paths.support.appendingPathComponent("pr-rank.json") }
 
     /// Commits by your git email. Roots default to Projects, Developer, code, src, and workspace, two levels deep, 30 newest repos.
     static func localCommits() async -> (d7: Int, d30: Int, repos: Int, roots: [String]) {

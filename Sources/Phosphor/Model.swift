@@ -373,8 +373,8 @@ final class Prefs: ObservableObject {
     @Published var showResetTicker: Bool { didSet { d.set(showResetTicker, forKey: "showResetTicker") } }
     /// Unverified posts. On until the user hides them. Official items stay either way.
     @Published var includeRumors: Bool { didSet { d.set(includeRumors, forKey: "includeRumors") } }
-    /// Worker `/feed.json`. Empty uses the public status RSS feeds.
-    @Published var resetFeedURL: String { didSet { d.set(resetFeedURL, forKey: "resetFeedURL") } }
+    /// Worker `/rank.json`. Empty uses the dated snapshot shipped with the app.
+    @Published var prRankURL: String { didSet { d.set(prRankURL, forKey: "prRankURL") } }
     /// `pace` or `usage`. Pace is the default: filling the quota just before reset is the goal.
     @Published var iconColorMode: String { didSet { d.set(iconColorMode, forKey: "iconColorMode") } }
     /// Fold mode, the mode the pin button restores, and whether a double-click HUD is open.
@@ -409,6 +409,7 @@ final class Prefs: ObservableObject {
         showResetTicker = d.object(forKey: "showResetTicker") as? Bool ?? true
         includeRumors = d.object(forKey: "includeRumors") as? Bool ?? true
         resetFeedURL = d.string(forKey: "resetFeedURL") ?? ""
+        prRankURL = d.string(forKey: "prRankURL") ?? ""
         iconColorMode = d.string(forKey: "iconColorMode") ?? IconColor.Mode.pace.rawValue
         collapse = CollapseState.restored(mode: d.string(forKey: "collapseMode"),
                                           remembered: d.string(forKey: "collapseRemembered"),
