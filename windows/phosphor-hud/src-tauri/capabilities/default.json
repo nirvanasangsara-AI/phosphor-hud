@@ -8,6 +8,7 @@
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-start-dragging",
+    "allow-app-version",
     "allow-hud-state",
     "allow-hide-hud",
     "allow-show-hud",

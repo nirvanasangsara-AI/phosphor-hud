@@ -5,8 +5,8 @@
   "description": "Phosphor Windows HUD",
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
-    "build": "tauri build"
+    "dev": "node apply-version.js dev",
+    "build": "node apply-version.js build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

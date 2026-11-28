@@ -1,24 +1,67 @@
-<h1 align="center">Φ Phosphor</h1>
+# Phosphor
+
+Mac 메뉴 막대에서 쓰는 AI 코딩 구독 사용량 앱입니다. Claude Code, Codex, Google AI, Grok, Copilot처럼 이미 쓰고 있는 서비스의 한도와 리셋 시각을 한 화면에 모읍니다.
 
 <p align="center">
-  <b>Every AI coding plan you pay for, in one always-on-top HUD — and exactly when you'll hit the limit.</b><br>
-  Native SwiftUI for macOS. Claude Code, Codex, Google AI, Grok, Copilot and 30+ more. No cookies scraped, ever.
+  <a href="#설치">설치</a> · <a href="#install">Install</a> · <a href="#windows">Windows</a> · <a href="#features">Features</a> · <a href="#privacy">Privacy</a> · <a href="docs/GUIDE.md">Guide</a> · <a href="#한국어">한국어</a>
 </p>
 
-<p align="center">
-  <img src="docs/assets/menubar.png" width="140" alt="Phosphor menu bar item showing Φ 74% live usage in the macOS menu bar"><br>
-  <sub>Menu bar indicator (<code>Φ 74%</code>) — click to toggle the floating HUD, or keep it always on top.</sub>
-</p>
+## 다운로드
 
-<p align="center">
-  <img src="docs/assets/hero.gif" width="420" alt="Live Phosphor HUD in English: Claude Code, Codex, Google AI, Grok, Copilot, Elite glow, weekly sparklines, and burn-rate / depletion lines">
-</p>
+**[최신 릴리스에서 Phosphor.dmg 받기](https://github.com/nirvanasangsara-AI/phosphor-hud/releases/latest)**
 
-<p align="center">
-  <a href="#install">Install</a> · <a href="#windows">Windows</a> · <a href="#features">Features</a> · <a href="#privacy">Privacy</a> · <a href="docs/GUIDE.md">Full guide</a> · <a href="#한국어">한국어</a>
-</p>
+macOS 14 이상이 필요합니다. 같은 페이지의 Phosphor.zip은 디스크 이미지를 열 수 없을 때의 대안입니다.
+
+## 설치
+
+1. 받은 DMG를 엽니다.
+2. Phosphor를 Applications 폴더로 끌어다 놓습니다.
+3. Applications 폴더에서 Phosphor를 실행합니다.
+
+### 처음 열 때
+
+Apple 개발자 서명과 공증을 하지 않은 앱입니다. macOS가 첫 실행을 막을 수 있습니다.
+
+Finder에서 Phosphor를 마우스 오른쪽 단추로 클릭하고 **열기**를 고릅니다. 확인 창이 나오면 **열기**를 다시 누릅니다.
+
+macOS 15 이상에서는 시스템 설정 > 개인정보 보호 및 보안으로 가서 **그래도 열기**를 눌러도 됩니다.
+
+한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위의 `Phosphor 0.2.1`에서 설치한 버전을 확인할 수 있습니다.
 
 ---
+
+## Download
+
+**[Get Phosphor.dmg from the latest release](https://github.com/nirvanasangsara-AI/phosphor-hud/releases/latest)**
+
+macOS 14 or later. Phosphor.zip on the same page is a fallback when a disk image does not open.
+
+## Install
+
+1. Open the DMG.
+2. Drag Phosphor to the Applications folder.
+3. Launch Phosphor from Applications.
+
+### The first time you open it
+
+Phosphor is not signed with an Apple Developer ID and is not notarized, so macOS can block the first launch.
+
+In Finder, right-click Phosphor and choose **Open**. When the dialog appears, click **Open** again.
+
+On macOS 15 and later you can also open System Settings, go to Privacy & Security, and click **Open Anyway**.
+
+After that first launch it opens normally. The top line of the menu, `Phosphor 0.2.1`, is the version you have.
+
+---
+
+<p align="center">
+  <img src="docs/assets/menubar.png" width="140" alt="Phosphor menu bar item showing Φ 74% in the macOS menu bar. Demo data."><br>
+  <sub>Menu bar indicator. Click it to show or hide the panel.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/hero.gif" width="420" alt="Phosphor panel with Claude Code, Codex, Google AI, Grok, and Copilot. Demo data.">
+</p>
 
 ## Why
 
@@ -55,20 +98,7 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
   <img src="docs/screenshots/themes.gif" width="300" alt="Phosphor cycling through its themes">
 </p>
 
-<sub>The hero GIF is a live HUD recording (English). The chart and theme shots below use the built-in demo data (`Phosphor --demo`).</sub>
-
-## Install
-
-```bash
-git clone https://github.com/nirvanasangsara-AI/phosphor-hud.git
-cd phosphor-hud && ./scripts/build-app.sh --run
-```
-
-macOS 14+ and the Xcode Command Line Tools. To try it without logging in to anything, run
-`dist/Phosphor.app/Contents/MacOS/Phosphor --demo`.
-
-Prebuilt zips will be attached to Releases. They aren't notarized yet, so the first time you open the app, use right-click → **Open**.
-A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
+<sub>These pictures use the built-in demo data (`Phosphor --demo`), not a real account.</sub>
 
 ## Windows
 
@@ -83,8 +113,10 @@ Windows 10 or 11, with the WebView2 runtime (already present on current Windows 
 ```bash
 cd windows/phosphor-hud
 npm install
-npm run tauri build
+npm run build
 ```
+
+`npm run build` reads the repo [`VERSION`](VERSION) file and stamps it on the installer and the window. The title and the tray menu say `Phosphor 0.2.1`, the same string as the Mac menu. A new `VERSION` shows up on the next build.
 
 The NSIS installer is under `windows/phosphor-hud/src-tauri/target/release/bundle/nsis/`. A portable `Phosphor.exe` is next to it in `target/release/`. GitHub Actions on `windows-latest` builds the same thing and uploads it as an artifact. Rust and Node are only needed if you build it yourself.
 
@@ -149,6 +181,24 @@ swift test                    # PhosphorCore unit tests
 ./scripts/hero.sh             # regenerate README images from demo data
 ./scripts/screenshots.sh      # theme screenshots + GIF
 ```
+
+## 개발자
+
+소스에서 빌드하려면 macOS 14 이상과 Xcode Command Line Tools가 필요합니다.
+
+```bash
+git clone https://github.com/nirvanasangsara-AI/phosphor-hud.git
+cd phosphor-hud
+./scripts/build-app.sh --run
+```
+
+로그인 없이 화면만 보려면 `dist/Phosphor.app/Contents/MacOS/Phosphor --demo`를 실행합니다. 이 데모에는 실제 계정 데이터가 없습니다.
+
+버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴에는 `Phosphor 0.2.1`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.2.1`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
+
+## Developers
+
+The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build shows the same `Phosphor 0.2.1` as a release build. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.2.1`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
 
 ## 한국어
 
