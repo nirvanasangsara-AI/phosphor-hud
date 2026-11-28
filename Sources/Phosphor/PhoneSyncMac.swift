@@ -134,13 +134,12 @@ final class PhoneSyncService {
         lock.unlock()
         if tokens != before { Self.saveTokens(tokens) }
         let reason = result.status == 200 ? "OK" : (result.status == 401 ? "Unauthorized" : "Error")
-        var head = "HTTP/1.1 \(result.status) \(reason)\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: \(result.json.count)\r\nConnection: close\r\n\r\n"
+        let head = "HTTP/1.1 \(result.status) \(reason)\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: \(result.json.count)\r\nConnection: close\r\n\r\n"
         var bytes = Data(head.utf8)
         bytes.append(result.json)
         bytes.withUnsafeBytes { raw in
             if let base = raw.baseAddress { _ = Darwin.write(fd, base, raw.count) }
         }
-        _ = head
     }
 
     static func lanIPv4() -> String {

@@ -45,7 +45,7 @@ class PhosphorWidget : GlanceAppWidget() {
                     .clickable(actionStartActivity(open))
             ) {
                 Text(
-                    text = if (demo) "Φ  Demo" else "Φ",
+                    text = "Φ  ${com.phosphor.hud.BuildConfig.VERSION_NAME}" + if (demo) "  Demo" else "",
                     style = TextStyle(
                         color = ColorProvider(theme.phi),
                         fontSize = 16.sp,

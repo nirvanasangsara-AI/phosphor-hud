@@ -8,12 +8,26 @@ android {
     namespace = "com.phosphor.hud"
     compileSdk = 35
 
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    val phosphorVersion = file("../../VERSION").readText().trim()
+    require(phosphorVersion.matches(Regex("""[0-9]+(\.[0-9]+){1,3}"""))) {
+        "VERSION must look like 0.3.0, found: $phosphorVersion"
+    }
+    val versionParts = phosphorVersion.split(".").map { it.toInt() }
+    val phosphorCode = versionParts.getOrElse(0) { 0 } * 10_000 +
+        versionParts.getOrElse(1) { 0 } * 100 +
+        versionParts.getOrElse(2) { 0 }
+
     defaultConfig {
         applicationId = "com.phosphor.hud"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = phosphorCode
+        versionName = phosphorVersion
     }
 
     buildTypes {
@@ -27,7 +41,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
 }
 
 dependencies {

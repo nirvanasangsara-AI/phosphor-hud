@@ -130,7 +130,7 @@ private fun HudScreen(onScan: () -> Unit, onLocale: () -> Unit) {
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text("Φ  Phosphor", color = Color(0xFFF4C46A), style = MaterialTheme.typography.headlineSmall)
+            Text("Φ  Phosphor ${BuildConfig.VERSION_NAME}", color = Color(0xFFF4C46A), style = MaterialTheme.typography.headlineSmall)
             if (!paired) {
                 Text(context.getString(R.string.pair_title), color = Color.White, style = MaterialTheme.typography.titleMedium)
                 Text(context.getString(R.string.pair_body), color = Color(0xFFA8A29A))
