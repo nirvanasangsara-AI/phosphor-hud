@@ -27,7 +27,9 @@ if (( SIZE_MB < 64 )); then SIZE_MB=64; fi
 
 # A read-write image, then a compressed one. Creating the symlink on the
 # mounted volume keeps it a symlink (srcfolder copies sometimes follow it).
-hdiutil create -size "${SIZE_MB}m" -fs HFS+ -volname "$VOLNAME" -format UDRW -ov -o "$WORK/rw"
+# Do not pass -format here: on current macOS, hdiutil create -format requires
+# -srcfolder, and a sized -fs image is already read-write.
+hdiutil create -size "${SIZE_MB}m" -fs HFS+ -volname "$VOLNAME" "$WORK/rw.dmg"
 if [[ -f "$WORK/rw.dmg" ]]; then
   RW="$WORK/rw.dmg"
 elif [[ -f "$WORK/rw.dmg.dmg" ]]; then
