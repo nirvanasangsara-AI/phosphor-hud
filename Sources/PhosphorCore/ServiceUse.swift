@@ -1,8 +1,8 @@
 import Foundation
 
-/// Whether a catalog row is drawn. New installs use `.auto`: the row appears only when this Mac
-/// has a login, a usage log, an API key, or a billing-screen reading. A binary, an app bundle,
-/// or an empty config folder is not enough.
+/// Whether a catalog row is drawn. New installs use `.auto`: the row appears only after recent
+/// non-zero use (a quota above 0%, tokens or API spend in the last 30 days, or a model loaded
+/// in Ollama). A login file, an installed app, a config file, or a billing-screen reading is not enough.
 public enum ServiceUse {
     public enum Display: String, Codable, Sendable, CaseIterable, Equatable {
         case auto
@@ -31,13 +31,34 @@ public enum ServiceUse {
         case absent
     }
 
-    /// `hasUseEvidence` is a credential file, usage log, API key, or billing-screen hit recorded by
-    /// the registry. It keeps the row even when the reader still phrases its placeholder as "Installed".
-    public static func shown(display: Display, inUse: Bool, hasUseEvidence: Bool = false) -> Bool {
+    /// Under `.auto` the row needs recent non-zero use. A login file, an install, a config file,
+    /// or a billing-screen reading is not enough. `.always` still forces the row on.
+    public static func shown(display: Display, recentUse: Bool) -> Bool {
         switch display {
         case .always: return true
         case .hidden: return false
-        case .auto: return inUse || hasUseEvidence
+        case .auto: return recentUse
+        }
+    }
+
+    /// One meter or quota from a reading. `localServer` rows count only a loaded model, not a model list.
+    public struct UseSample: Equatable, Sendable {
+        public var label: String
+        public var amount: Double
+        public var isQuota: Bool
+        public init(label: String, amount: Double, isQuota: Bool) {
+            self.label = label; self.amount = amount; self.isQuota = isQuota
+        }
+    }
+
+    public static func recentUse(_ samples: [UseSample], localServer: Bool) -> Bool {
+        if localServer {
+            return samples.contains { $0.label == "LOADED" && $0.amount > 0 }
+        }
+        let inventory: Set<String> = ["INSTALLED", "MODELS"]
+        return samples.contains { sample in
+            if inventory.contains(sample.label) { return false }
+            return sample.amount > 0
         }
     }
 
@@ -49,11 +70,9 @@ public enum ServiceUse {
         return localServer && installed
     }
 
+    /// Placeholder text is never recent use. A signed-in note, a billing screen, or "login found" stays off.
     public static func inUse(_ presence: Presence) -> Bool {
-        switch presence {
-        case .liveReading, .signedIn: return true
-        case .installOnly, .absent: return false
-        }
+        presence == .liveReading
     }
 
     /// Status text from a reader. "Installed (…)" and "not logged in" are not a signup.

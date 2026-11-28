@@ -445,17 +445,31 @@ final class Prefs: ObservableObject {
     }
 
     func include(_ snap: ProviderSnapshot) -> Bool {
-        let presence: ServiceUse.Presence
+        let localServer = snap.id == "ollama" || snap.id == "lmstudio"
+        let samples: [ServiceUse.UseSample]
         switch snap.state {
-        case .ok: presence = .liveReading
-        case .loading: presence = .absent
-        case .idle(let message, _): presence = ServiceUse.presence(forMessage: message, connected: false)
-        case .unavailable: presence = .installOnly
-        case .error(let message):
-            presence = (message.contains("expired") || message.hasPrefix("HTTP")) ? .signedIn : .absent
+        case .ok(let windows, _):
+            samples = windows.map { window in
+                let amount: Double
+                let quota: Bool
+                switch window.measure {
+                case .quota:
+                    amount = window.usedPercent
+                    quota = true
+                case .meter(let used, _):
+                    amount = used
+                    quota = false
+                case .balance(let left, let total, _):
+                    amount = total.map { max(0, $0 - left) } ?? 0
+                    quota = false
+                }
+                return ServiceUse.UseSample(label: window.label, amount: amount, isQuota: quota)
+            }
+        default:
+            samples = []
         }
-        let evidenced = ProviderRegistry.shared.detected[snap.id] != nil
-        return ServiceUse.shown(display: display(for: snap.id), inUse: ServiceUse.inUse(presence), hasUseEvidence: evidenced)
+        return ServiceUse.shown(display: display(for: snap.id),
+                                recentUse: ServiceUse.recentUse(samples, localServer: localServer))
     }
 
     func hideProvider(_ id: String) {

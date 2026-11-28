@@ -75,6 +75,26 @@ import Foundation
         #expect(c.prSparkline() == [15, 25, 20, 10])
     }
 
+    @Test func thirtyDayPaceIsDailyAndWeeklyAndComparedWithToday() {
+        var c = DevCounts(login: "octo", fetchedAt: Date())
+        c.merged30 = 83
+        c.mergedToday = 7
+        c.merged7 = 19
+        let pace = c.mergePace()
+        #expect(abs(pace.perDay - 83.0 / 30) < 1e-9)
+        #expect(abs(pace.perWeek - 83.0 * 7 / 30) < 1e-9)
+        #expect(DevCounts.dayRate(pace.perDay) == "2.8")
+        #expect(DevCounts.weekRate(pace.perWeek) == "19")
+        #expect(DevCounts.multiple(pace.todayMultiple!) == "2.5")
+        #expect(DevCounts.multiple(pace.weekMultiple!) == "1.0")
+
+        c.merged30 = 0
+        c.mergedToday = 7
+        let empty = c.mergePace()
+        #expect(empty.todayMultiple == nil)
+        #expect(empty.weekMultiple == nil)
+    }
+
     @Test func oldDevStatsFileDecodesWithoutNewFields() throws {
         let json = """
         {"login":"octo","mergedToday":1,"merged7":4,"merged30":10,"openedToday":0,"opened7":0,"opened30":0,"commitsToday":0,"commits7":0,"commits30":0,"mergedWeeks":[4,3],"commitWeeks":[],"fetchedAt":"2026-11-01T00:00:00Z"}

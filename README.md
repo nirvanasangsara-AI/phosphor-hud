@@ -78,7 +78,7 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
   You get `+3.2%/h` and the time you'll hit 100 % (in the warning colour if that comes before the reset), or `≈ 83% at reset` if you'll make it. When a slope can't be fitted yet the line stays up as `measuring pace`, `steady · 0%/h`, `▲ limit reached`, or `no active session`.
 - **Always on top, natively.** A SwiftUI panel with no web runtime that floats over every Space. Compact mode, opacity, click-through, and a `Φ 94%` menu bar item.
 - **Fold.** **접기 방식** remembers one of three modes. **고정** stays open. **더블클릭** (the default) folds or opens from the header. **자동 접기** starts as a one-line strip, opens under the pointer, and folds about 0.8s after the pointer leaves. A click on the open strip holds it until the pointer leaves. The pin button in the header does the same as **고정** and returns to the mode you had chosen. The window keeps its top-left corner.
-- **Only services you actually use.** **표시할 서비스** is **자동** until you change it. A row appears when this Mac has a login file, a usage log, an API key, or a billing-screen reading. An installed app or an empty config folder (Amp, Droid, JetBrains AI, and the rest of the catalog) stays in the app and stays off the HUD until that evidence shows up. **항상 표시** and **숨김** override that per service.
+- **Only services you actually use.** **표시할 서비스** is **자동** until you change it. A row appears after recent non-zero use: a quota above 0%, tokens in the last 30 days, API spend, or a model loaded in Ollama. A login file, an installed app, a config file, or a billing-screen reading does not open a row. **항상 표시** and **숨김** still override that per service.
 - **Language.** English by default, with in-app language switching (English, Korean, or follow your macOS system language) covering menus, settings, and burn-rate / depletion descriptions.
 - **Subscription ROI.** Local Claude Code / Codex / Gemini CLI logs are priced at API list rates (LiteLLM's public table) and set against what your plans cost: `ROI 8.4x`.
   A 14-day stacked chart shows tokens or dollars per tool.
@@ -170,9 +170,11 @@ The HUD can fold to one line (the title, the highest usage, and the next reset) 
 
 The pin on the header is filled and labelled **고정** while it is holding the panel open. Click it again to go back to the previous mode.
 
-**표시할 서비스** lists every provider. **자동** is the default. **항상 표시** forces the row on. **숨김** forces it off. Under **자동**, Phosphor looks for a credential file, a usage log, an API key, or a `billing-screens.json` reading. Finding `amp` or `droid` on `PATH`, or a JetBrains IDE in `/Applications`, is not enough.
+**표시할 서비스** lists every provider. **자동** is the default. **항상 표시** forces the row on. **숨김** forces it off. Under **자동**, a row needs recent non-zero use: a quota above 0%, tokens in the last 30 days, API spend, or a model loaded in Ollama. A login file, an install, a config file, or a billing-screen reading does not open a row. LM Studio only lists models, so that row stays off until you choose **항상 표시**.
 
-The Elite chip is back, on the current label. Above 2 merged PRs per week it reads `Elite band · 18.0 PR/wk (benchmark >2.0)` and shimmers gold. Reduce Motion leaves a still glow. That "10%" people saw stuck is LinearB's published ceiling for the Elite band (more than 2.0 merged PRs per developer per week). It is not progress toward a monthly goal. Phosphor does not have a 3,000 PR/month target. Past that ceiling the label shows the real rate, so 3.0 and 18.0 do not look the same.
+The PR strip reads `30d 83 · 2.8/day · ~19/wk` and `today 7 · 2.5× avg` (this week gets the same kind of multiple). Those are the last 30 days split into a day and a week, then today and this week divided by those averages. There is no "top X% of GitHub authors" line. No published table gives individual-author percentiles we can cite. Octoverse publishes totals. LinearB's bands are team rates.
+
+The gold chip is labeled **팀 기준**. It is LinearB 2026 merge frequency, a team average per developer per week (`Elite band · 18.0 PR/wk (benchmark >2.0)`), and it shimmers when the rate is Elite. Reduce Motion leaves a still glow. It is not a personal rank and not a monthly goal. A per-person comparison with a fleet such as Grok Bot is omitted: public notes give how many people landed a PR, not a headcount to divide by.
 
 ## 0.3.3
 
@@ -272,7 +274,8 @@ The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSI
 - 쿠키·세션 스크래핑은 하지 않습니다. 각 공식 도구가 이미 저장해 둔 값만 읽고, 토큰은 출력하거나 저장하지 않습니다.
 - Windows용 첫 빌드도 같은 계산을 씁니다. 설치와 아직 안 되는 항목은 위의 Windows 절에 있습니다. 화면 문구는 영어이고, 접기 방식만 한국어 이름(고정, 더블클릭, 자동 접기)을 씁니다.
 - **접기 방식**은 고정, 더블클릭(기본값), 자동 접기 세 가지입니다. 헤더의 핀은 고정을 켰다 끄며, 끄면 이전에 고른 방식으로 돌아갑니다. 창의 왼쪽 위는 그대로입니다.
-- **표시할 서비스**의 기본값은 자동입니다. 로그인 파일, 사용 로그, API 키, 결제 화면 기록이 있을 때만 행이 나옵니다. 설치만 된 Amp, Droid, JetBrains AI 등은 코드에는 남아 있고, 증거가 생기면 다시 나타납니다. 서비스마다 항상 표시와 숨김을 고를 수 있습니다.
+- **표시할 서비스**의 기본값은 자동입니다. 최근에 실제로 쓴 경우만 행이 나옵니다. 로그인 파일, 설치, 설정 파일, 결제 화면 기록만으로는 나오지 않습니다. 항상 표시와 숨김은 그대로 고를 수 있습니다.
+- PR 줄은 최근 30일을 하루 평균과 주 평균으로 나누고, 오늘과 이번 주가 그 평균의 몇 배인지 보여 줍니다. GitHub 작성자 개인 백분위는 인용할 공개 분포가 없어 넣지 않았습니다. 등급 배지는 **팀 기준**이며 LinearB의 팀 평균입니다.
 
 ## License
 

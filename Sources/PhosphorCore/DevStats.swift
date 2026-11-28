@@ -55,6 +55,39 @@ public struct DevCounts: Codable, Sendable, Equatable {
         return Array(mergedWeeks.prefix(4).reversed())
     }
 
+    /// Daily and weekly rates over the last 30 days, and how today / this week compare with them.
+    /// `todayMultiple` and `weekMultiple` are nil when the 30-day count is zero.
+    public struct MergePace: Equatable, Sendable {
+        public var perDay: Double
+        public var perWeek: Double
+        public var todayMultiple: Double?
+        public var weekMultiple: Double?
+    }
+
+    public func mergePace() -> MergePace {
+        let perDay = Double(merged30) / 30.0
+        let perWeek = Double(merged30) * 7.0 / 30.0
+        return MergePace(
+            perDay: perDay,
+            perWeek: perWeek,
+            todayMultiple: perDay > 0 ? Double(mergedToday) / perDay : nil,
+            weekMultiple: perWeek > 0 ? Double(merged7) / perWeek : nil
+        )
+    }
+
+    public static func dayRate(_ value: Double) -> String {
+        String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    public static func weekRate(_ value: Double) -> String {
+        String(Int(value.rounded()))
+    }
+
+    /// "2.5×". One decimal, so 2.53 reads as 2.5.
+    public static func multiple(_ value: Double) -> String {
+        String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
     /// "▲ 4 · 22%" or "▼ 3". Percent is omitted when the previous period was zero.
     public static func changeText(delta: Int, percent: Double?) -> String {
         let arrow = delta < 0 ? "▼" : "▲"

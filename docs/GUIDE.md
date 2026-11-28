@@ -107,7 +107,7 @@ overwrites or removes files it didn't download. Mono themes tint icons to the th
 
 ### More providers (catalog of 30)
 
-Beyond the native readers, Phosphor knows 30 providers in total. A row is on under **자동** only when this Mac has a login file, a usage log, an API key, or a billing-screen reading. A command on `PATH`, an app bundle, or an empty config folder is listed by `Phosphor --detect` and does not draw a row. **표시할 서비스** can force **항상 표시** or **숨김** per service.
+Beyond the native readers, Phosphor knows 30 providers in total. A row is on under **자동** only after recent non-zero use (a quota above 0%, tokens in the last 30 days, API spend, or a model loaded in Ollama). A login file, an app, a config folder, or a billing-screen reading does not draw a row. **표시할 서비스** can force **항상 표시** or **숨김** per service.
 
 | Kind | Providers | What the row shows |
 |---|---|---|
@@ -179,7 +179,7 @@ Menu → **GitHub PRs & efficiency** (off by default) adds a strip under the hea
 - **Merged PRs** today / 7D / 30D and **GitHub commits** 7D / 30D, from `gh api search/...` with your existing `gh` login (read-only; Phosphor never reads the token). Commits in local repos under `~/Projects`, `~/Developer`, `~/code`, `~/src` (by your git email) are listed separately in the hover card. Refreshed every 30 minutes (15 search calls, under GitHub's 30/min limit).
 - **Subscription ROI** = API-equivalent value from local logs ÷ monthly subscriptions prorated to the same days (7D until the log ledger reaches 30 days). Currencies are converted with open.er-api.com, cached daily.
 - **Cost per PR** (monthly spend ÷ 30D merged PRs), **tokens per PR**, and **velocity** (PRs/week, commits/week, this week vs the 3 before).
-- **Tier badge** placed within the [LinearB 2026 Software Engineering Benchmarks](https://linearb.io/resources/engineering-benchmarks) merge-frequency bands (Elite > 2.0 merged PRs/dev/week, the report's top 10% band; Good 1.2–2.0; Fair 0.66–1.2). The chip shows the real rate (`Elite band · 18.0 PR/wk`), not a frozen "Top 10%". That 10% is the published ceiling of the band. It is not a monthly PR goal, and Phosphor has no 3,000 PR target. Elite shimmers gold unless Reduce Motion is on.
+- **Tier badge**, labeled **팀 기준**, placed within the [LinearB 2026 Software Engineering Benchmarks](https://linearb.io/resources/engineering-benchmarks) merge-frequency bands. Those bands are team averages per developer per week (Elite > 2.0, the report's top 10% of teams). The chip shows the real rate (`Elite band · 18.0 PR/wk`) and shimmers gold for Elite unless Reduce Motion is on. It is not a percentile of individual GitHub authors. The strip also shows the last 30 days as a daily and weekly average, and today / this week as a multiple of that average.
 - **Save Monthly Receipt** writes a PNG card to `~/Library/Application Support/Phosphor/receipts/` and copies it (and its text) to the clipboard.
 
 Burn rate (`+X.X%/h`) and the run-out time show on every quota bar. Two samples a few minutes apart are enough to fit a slope (5-hour windows still look at the last hour, weekly ones the last 6 hours). If a slope can't be fitted yet the row stays visible as `measuring pace · 0%/h`, `steady · ≈ X% at reset`, `▲ limit reached`, or `no active session` (when a 5-hour window isn't running). A cached Claude Code reading keeps a forecast line too.

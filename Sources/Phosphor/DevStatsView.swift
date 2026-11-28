@@ -53,32 +53,33 @@ struct DevStatsView: View {
         let c = e.counts
         let stale = Date().timeIntervalSince(c.fetchedAt) > 600
         VStack(alignment: .leading, spacing: 2) {
+            let pace = c.mergePace()
             HStack(spacing: 6) {
                 Text(theme.name(T.t("dev.thisWeek", "\(c.merged7)")))
                     .font(theme.font(15, .semibold)).foregroundStyle(theme.fg)
-                if let wow = c.weekOverWeek() {
-                    Text(DevCounts.changeText(delta: wow.delta, percent: wow.percent))
-                        .font(theme.font(12, .semibold))
-                        .foregroundStyle(wow.delta < 0 ? theme.warn : theme.fg)
+                if let multiple = pace.weekMultiple {
+                    Text(theme.name(T.t("dev.weekPace", DevCounts.multiple(multiple))))
+                        .font(theme.font(12, .semibold)).foregroundStyle(theme.fg)
                 }
                 UsageSparkline(values: c.prSparkline().map(Double.init), tint: theme.fg, width: 64,
                                helpText: c.mergedDaily == nil ? "Merged PRs, four weeks" : "Merged PRs, last 14 days")
                 Spacer(minLength: 4)
-                Text(theme.name(T.t("dev.today", "\(c.mergedToday)")))
+                Text(theme.name(pace.todayMultiple.map { T.t("dev.todayPace", "\(c.mergedToday)", DevCounts.multiple($0)) }
+                                 ?? T.t("dev.today", "\(c.mergedToday)")))
                     .font(theme.font(12, .semibold)).foregroundStyle(theme.fg)
             }
             .lineLimit(1).minimumScaleFactor(0.75)
             HStack(spacing: 6) {
-                Text(theme.name(T.t("dev.thirty", "\(c.merged30)", String(format: "%.1f", c.prsPerWeek))))
+                Text(theme.name(T.t("dev.summary", "\(c.merged30)", DevCounts.dayRate(pace.perDay), DevCounts.weekRate(pace.perWeek))))
                     .foregroundStyle(theme.fg)
-                if let prev = c.previous30Change() {
-                    Text(DevCounts.changeText(delta: prev.delta, percent: prev.percent))
-                        .foregroundStyle(prev.delta < 0 ? theme.warn : theme.dim)
-                        .help("Last 30 days versus the 30 days before")
-                }
+                    .help("Merged PRs in the last 30 days, divided into a daily average and a weekly average. Today and this week are multiples of those averages. Not a goal percent.")
                 Spacer(minLength: 4)
                 PlacementBadge(label: e.placement.label, elite: e.placement.tier == "Elite", theme: theme)
                     .help(PRBenchmark.source)
+                Text(theme.name(T.t("dev.teamMark")))
+                    .font(theme.font(9, .semibold))
+                    .foregroundStyle(theme.dim)
+                    .help("LinearB's merge-frequency bands are team averages per developer per week, not a personal rank among GitHub authors.")
             }
             .font(theme.font(11)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
             HStack(spacing: 6) {
