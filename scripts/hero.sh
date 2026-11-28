@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# README hero + chart images from demo data (no real accounts): docs/assets/hero.png, docs/assets/chart.png.
+# README stills from demo data (no real accounts): docs/assets/hero.png, docs/assets/chart.png.
 # Needs a built dist/Phosphor.app and Screen Recording permission for your terminal.
+# The animated hero is docs/assets/hero.gif, built from these stills by scripts/hero-gif.sh
+# (a crossfade, not a recording of a signed-in account).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 APP=dist/Phosphor.app/Contents/MacOS/Phosphor

@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/hero.gif" width="420" alt="Live Phosphor HUD in English: Claude Code, Codex, Google AI, Grok, Copilot, Elite glow, weekly sparklines, and burn-rate / depletion lines">
+  <img src="docs/assets/hero.gif" width="420" alt="Phosphor demo HUD crossfading the 14-day cost chart and the Clean, Retro, Matrix, Glasses, and Raid themes. Sample data only.">
 </p>
 
 <p align="center">
@@ -55,7 +55,7 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
   <img src="docs/screenshots/themes.gif" width="300" alt="Phosphor cycling through its themes">
 </p>
 
-<sub>The hero GIF is a live HUD recording (English). The chart and theme shots below use the built-in demo data (`Phosphor --demo`).</sub>
+<sub>The hero GIF crossfades screenshots from the built-in demo data (<code>Phosphor --demo</code>): the 14-day cost chart and the Clean, Retro, Matrix, Glasses, and Raid themes. The stills below are the same demo data.</sub>
 
 ## Install
 
@@ -88,7 +88,8 @@ extra accounts and building. Themes: [docs/THEMES.md](docs/THEMES.md). Releasing
 
 ```bash
 swift test                    # PhosphorCore unit tests
-./scripts/hero.sh             # regenerate README images from demo data
+./scripts/hero.sh             # regenerate README stills from demo data (needs macOS)
+./scripts/hero-gif.sh         # README hero GIF from those demo screenshots
 ./scripts/screenshots.sh      # theme screenshots + GIF
 ```
 

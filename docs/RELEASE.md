@@ -27,4 +27,4 @@ signature. Release zips stay ad-hoc until a real Apple Developer ID is set.
 
 - `swift test` green, `./scripts/build-app.sh --run` launches, HUD shows rows.
 - No secrets in the repo: the app reads logins from the official CLIs at runtime only.
-- Screenshots in `docs/screenshots` come from `--demo --stage` (no real account data, no third-party logos).
+- Screenshots in `docs/screenshots` and `docs/assets` come from `--demo --stage` (no real account data, no third-party logos). `docs/assets/hero.gif` is a crossfade of those demo shots (`scripts/hero-gif.sh`), not a recording of a signed-in account.
