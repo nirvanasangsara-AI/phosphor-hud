@@ -7,7 +7,8 @@ enum CRTIcon {
     static let pointSize: CGFloat = 18
 
     static func image(fill: Double, band: IconColor.Band) -> NSImage {
-        let image = NSImage(size: NSSize(width: pointSize, height: pointSize))
+        let points = NSSize(width: pointSize, height: pointSize)
+        let image = NSImage(size: points)
         image.isTemplate = false
         for scale in [1, 2] {
             let pixels = Int(pointSize) * scale
@@ -23,11 +24,14 @@ enum CRTIcon {
                 bytesPerRow: 0,
                 bitsPerPixel: 0
             ) else { continue }
-            rep.size = NSSize(width: pointSize, height: pointSize)
+            // Point size stays 18×18. The 36-pixel rep is the @2x backing store, not a bigger icon.
+            // The bitmap context's user space is that point size, so drawing must use points.
+            // Drawing `pixels` (36) here used to paint a double-size glyph and Retina showed only the left half.
+            rep.size = points
             NSGraphicsContext.saveGraphicsState()
             if let ctx = NSGraphicsContext(bitmapImageRep: rep) {
                 NSGraphicsContext.current = ctx
-                draw(side: CGFloat(pixels), fill: CGFloat(min(1, max(0, fill))), band: band)
+                draw(side: pointSize, fill: CGFloat(min(1, max(0, fill))), band: band)
             }
             NSGraphicsContext.restoreGraphicsState()
             image.addRepresentation(rep)
@@ -35,7 +39,8 @@ enum CRTIcon {
         return image
     }
 
-    /// AppKit's bitmap context is flipped: y grows downward. The phosphor fill grows upward from the screen bottom.
+    /// User space is points. AppKit's bitmap context is flipped: y grows downward.
+    /// The phosphor fill grows upward from the screen bottom.
     private static func draw(side: CGFloat, fill: CGFloat, band: IconColor.Band) {
         let u = side / 18
         func p(_ value: CGFloat) -> CGFloat { (value * u).rounded() }
