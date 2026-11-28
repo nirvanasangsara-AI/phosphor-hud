@@ -52,6 +52,12 @@ OUT="dist/$APP.app"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources"
 cp "$BIN_DIR/$APP" "$OUT/Contents/MacOS/$APP"
+PRICES="packaging/litellm-prices.min.json"
+if [[ ! -s "$PRICES" ]]; then
+  echo "error: $PRICES is missing. Run ./scripts/update-bundled-prices.sh" >&2
+  exit 1
+fi
+cp "$PRICES" "$OUT/Contents/Resources/litellm-prices.json"
 
 cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

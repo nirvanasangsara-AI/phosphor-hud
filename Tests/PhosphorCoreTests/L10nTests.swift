@@ -48,6 +48,10 @@ import Testing
 
     @Test func englishAndKoreanTablesHaveTheSameKeys() {
         #expect(L10n.tablesMatch)
+        #expect(L10n.text("logs.priceMissing", language: .english) == "price table not loaded · retrying")
+        #expect(L10n.text("logs.priceBanner", language: .korean).contains("가격표"))
+        #expect(L10n.text("dev.thisWeek", language: .english, "18") == "This week 18 PRs")
+        #expect(L10n.text("logs.unpriced", language: .english, "12") == "12 tokens unpriced")
     }
 
     @Test func englishModeNormalizesCodexUsageResetTitle() {

@@ -52,10 +52,16 @@ final class UsageStore: ObservableObject {
         self.dev = DevStatsService(demo: demo)
         if demo { logs.seedDemo(); accounts = DemoSource.accounts() }
         // Redraw rows when status dots or log totals change.
-        status.objectWillChange.merge(with: logs.objectWillChange).merge(with: registry.objectWillChange)
-            .merge(with: dev.objectWillChange)
+        status.objectWillChange.merge(with: registry.objectWillChange).merge(with: dev.objectWillChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &bag)
+        logs.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.redecorateLogs()
+                self?.objectWillChange.send()
+            }
             .store(in: &bag)
         if !demo, let d = try? Data(contentsOf: Self.alertMemoryFile),
            let m = try? JSONDecoder().decode(AlertMemory.self, from: d) { alertMemory = m }
@@ -239,34 +245,46 @@ final class UsageStore: ObservableObject {
         }
     }
 
+    private func redecorateLogs() {
+        guard !snapshots.isEmpty else { return }
+        snapshots = decorate(snapshots)
+    }
+
     private func logSourceKey(_ id: String) -> String? {
         if id == "claude" || id.hasPrefix("claude@") { return "claude" }
         if id == "codex" || id.hasPrefix("codex@") { return "codex" }
         if id == "gemini" || id.hasPrefix("gemini@") { return "gemini" }
+        if id == "cline" || id == "roo" { return id }
         return nil
     }
 
     /// Show 7-day API-equivalent $ on the row itself whenever local logs have priced usage.
+    /// An empty price table is a visible notice, never a $0 meter and never "every token is unpriced".
     private func attachLogSpend(_ s: ProviderSnapshot) -> ProviderSnapshot {
         guard let key = logSourceKey(s.id), let week = logs.snapshot.week[key], week.tokens > 0 else { return s }
         func series(_ cost: Bool) -> [Double] {
             logs.sparkline(source: key, days: 7, cost: cost)
         }
         func appendMeters(_ windows: inout [UsageWindow]) {
-            if !windows.contains(where: { $0.label == "7D EST" || $0.label == "7D API" }) {
-                if week.cost > 0 {
-                    var m = UsageWindow.meter("7D EST", used: week.cost, unit: "usd")
-                    m.detail = "l10n:logs.apiEquivalent"
-                    m.sparkline = series(true)
-                    windows.append(m)
-                } else if !windows.contains(where: { $0.label == "7D TOK" }) {
-                    var m = UsageWindow.meter("7D TOK", used: Double(week.tokens), unit: "tokens")
-                    if week.unpricedTokens > 0 {
-                        m.detail = "unpriced:\(Fmt.compact(Double(week.unpricedTokens)))"
-                    }
-                    m.sparkline = series(false)
-                    windows.append(m)
+            windows.removeAll { ["7D EST", "7D API", "7D TOK", "EST"].contains($0.label) }
+            if !logs.pricesReady && week.cost == 0 {
+                var m = UsageWindow.meter("EST", used: 0, unit: "tokens")
+                m.notice = "l10n:logs.priceMissing"
+                windows.append(m)
+                return
+            }
+            if week.cost > 0 {
+                var m = UsageWindow.meter("7D EST", used: week.cost, unit: "usd")
+                m.detail = "l10n:logs.apiEquivalent"
+                m.sparkline = series(true)
+                windows.append(m)
+            } else if logs.pricesReady {
+                var m = UsageWindow.meter("7D TOK", used: Double(week.tokens), unit: "tokens")
+                if week.unpricedTokens > 0 {
+                    m.detail = "unpriced:\(Fmt.compact(Double(week.unpricedTokens)))"
                 }
+                m.sparkline = series(false)
+                windows.append(m)
             }
         }
         switch s.state {
@@ -310,9 +328,13 @@ final class UsageStore: ObservableObject {
         }
         if s.id == "claude", let w = logs.snapshot.week["claude"], w.tokens > 0 {
             windows.append(.meter("TODAY", used: Double(logs.snapshot.today["claude"]?.tokens ?? 0), unit: "tokens"))
-            if windows.contains(where: { $0.label == "7D" }) {
+            if !logs.pricesReady && w.cost == 0 {
+                var m = UsageWindow.meter("EST", used: 0, unit: "tokens")
+                m.notice = "l10n:logs.priceMissing"
+                windows.append(m)
+            } else if windows.contains(where: { $0.label == "7D" }) {
                 if w.cost > 0 { windows.append(.meter("7D EST", used: w.cost, unit: "usd")) }
-            } else {
+            } else if logs.pricesReady || w.cost > 0 {
                 windows.append(.meter("7D TOK", used: Double(w.tokens), unit: "tokens"))
             }
             note = note ?? "logs"

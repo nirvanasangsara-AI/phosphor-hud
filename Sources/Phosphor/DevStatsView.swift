@@ -14,13 +14,16 @@ struct DevStatsView: View {
             if let e = Efficiency(store: store, dev: dev) {
                 strip(e)
             } else {
-                Text(theme.name(dev.problem ?? (dev.busy ? "Reading GitHub activity…" : "GitHub activity: waiting for gh")))
-                    .font(theme.font(9)).foregroundStyle(theme.dim)
+                Text(theme.name(problemLine))
+                    .font(theme.font(11, .semibold)).foregroundStyle(theme.warn)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 6).padding(.horizontal, 8)
         .background(RoundedRectangle(cornerRadius: 6).fill(theme.fg.opacity(0.06)))
         .contentShape(Rectangle())
+        .onTapGesture { dev.refreshIfDue(force: true) }
+        .help(T.t("dev.clickRefresh"))
         .onHover { inside in
             let h = hover
             h.inside = inside
@@ -36,41 +39,72 @@ struct DevStatsView: View {
         }
     }
 
+    private var problemLine: String {
+        guard let problem = dev.problem else {
+            return dev.busy ? "Reading GitHub activity…" : "GitHub activity: waiting for gh"
+        }
+        if problem.hasPrefix("unknown-account:") {
+            return T.t("dev.unknownAccount", String(problem.dropFirst("unknown-account:".count)))
+        }
+        return problem
+    }
+
     @ViewBuilder private func strip(_ e: Efficiency) -> some View {
         let c = e.counts
-        HStack(spacing: 6) {
-            Image(systemName: "arrow.triangle.pull").font(.system(size: 9, weight: .bold)).foregroundStyle(theme.dim)
-            Text(theme.name("merged PRs")).foregroundStyle(theme.dim)
-            Text("\(c.mergedToday)/\(c.merged7)/\(c.merged30)").foregroundStyle(theme.fg).fontWeight(.semibold)
-                .help("Merged PRs today / last 7 days / last 30 days")
-            Spacer(minLength: 2)
-            PlacementBadge(label: theme.name(e.placement.label), elite: e.placement.tier == "Elite", theme: theme)
-                .help("vs \(PRBenchmark.source)")
-        }
-        .font(theme.font(10)).monospacedDigit().lineLimit(1)
-        HStack(spacing: 6) {
-            Text(theme.name("commits")).foregroundStyle(theme.dim)
-            Text("\(c.commits7.formatted())/\(c.commits30.formatted())").foregroundStyle(theme.fg)
-                .help("GitHub commits last 7 days / last 30 days")
-            Spacer(minLength: 2)
-            if let r = e.roi {
-                Text(theme.name("ROI \(String(format: r >= 10 ? "%.0f" : "%.1f", r))x")).foregroundStyle(theme.fg).fontWeight(.semibold)
+        let stale = Date().timeIntervalSince(c.fetchedAt) > 600
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(theme.name(T.t("dev.thisWeek", "\(c.merged7)")))
+                    .font(theme.font(15, .semibold)).foregroundStyle(theme.fg)
+                if let wow = c.weekOverWeek() {
+                    Text(DevCounts.changeText(delta: wow.delta, percent: wow.percent))
+                        .font(theme.font(12, .semibold))
+                        .foregroundStyle(wow.delta < 0 ? theme.warn : theme.fg)
+                }
+                UsageSparkline(values: c.prSparkline().map(Double.init), tint: theme.fg, width: 64,
+                               helpText: c.mergedDaily == nil ? "Merged PRs, four weeks" : "Merged PRs, last 14 days")
+                Spacer(minLength: 4)
+                Text(theme.name(T.t("dev.today", "\(c.mergedToday)")))
+                    .font(theme.font(12, .semibold)).foregroundStyle(theme.fg)
             }
-            if let p = e.costPerPR { Text(theme.name("\(e.money(p, store: store))/PR")).foregroundStyle(theme.dim) }
-        }
-        .font(theme.font(10)).monospacedDigit().lineLimit(1)
-        HStack(spacing: 6) {
-            Text(theme.name("velocity \(String(format: "%.1f", c.prsPerWeek)) PR/wk · \(Int(c.commitsPerWeek.rounded())) commits/wk"))
-                .foregroundStyle(theme.dim)
-            if let t = DevCounts.trend(c.mergedWeeks), let ch = t.change {
-                Text((ch >= 0 ? "▲" : "▼") + "\(Int(abs(ch * 100).rounded()))%")
-                    .foregroundStyle(ch >= 0 ? theme.fg : theme.warn)
-                    .help("Merged PRs in the last 7 days (\(t.current)) vs the 3 weeks before (avg \(String(format: "%.1f", t.previousAverage)))")
+            .lineLimit(1).minimumScaleFactor(0.75)
+            HStack(spacing: 6) {
+                Text(theme.name(T.t("dev.thirty", "\(c.merged30)", String(format: "%.1f", c.prsPerWeek))))
+                    .foregroundStyle(theme.fg)
+                if let prev = c.previous30Change() {
+                    Text(DevCounts.changeText(delta: prev.delta, percent: prev.percent))
+                        .foregroundStyle(prev.delta < 0 ? theme.warn : theme.dim)
+                        .help("Last 30 days versus the 30 days before")
+                }
+                Spacer(minLength: 4)
+                Text(theme.name(e.placement.label))
+                    .font(theme.font(9))
+                    .foregroundStyle(theme.dim)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Capsule().fill(theme.fg.opacity(0.08)))
+                    .help(PRBenchmark.source)
             }
-            Spacer(minLength: 4)
-            if let tp = e.tokensPerPR { Text(theme.name("\(Fmt.compact(tp)) tok/PR")).foregroundStyle(theme.dim) }
+            .font(theme.font(11)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+            HStack(spacing: 6) {
+                Text("@\(c.login)").foregroundStyle(theme.dim)
+                Text(theme.name(T.t("dev.updated", T.clock(c.fetchedAt))))
+                    .foregroundStyle(theme.dim)
+                Spacer(minLength: 0)
+            }
+            .font(theme.font(9)).opacity(stale ? 0.45 : 1)
+            HStack(spacing: 6) {
+                Text(theme.name("commits")).foregroundStyle(theme.dim)
+                Text("\(c.commits7.formatted())/\(c.commits30.formatted())").foregroundStyle(theme.fg)
+                    .help("GitHub commits last 7 days / last 30 days")
+                Spacer(minLength: 2)
+                if let r = e.roi {
+                    Text(theme.name("ROI \(String(format: r >= 10 ? "%.0f" : "%.1f", r))x")).foregroundStyle(theme.fg).fontWeight(.semibold)
+                }
+                if let p = e.costPerPR { Text(theme.name("\(e.money(p, store: store))/PR")).foregroundStyle(theme.dim) }
+                if let tp = e.tokensPerPR { Text(theme.name("\(Fmt.compact(tp)) tok/PR")).foregroundStyle(theme.dim) }
+            }
+            .font(theme.font(10)).monospacedDigit().lineLimit(1)
         }
-        .font(theme.font(9)).monospacedDigit().lineLimit(1)
     }
 }
 
@@ -89,7 +123,8 @@ struct DevStatsDetail: View {
                   ("PRs opened", "\(c.openedToday)", "\(c.opened7)", "\(c.opened30)"),
                   ("Commits (GitHub)", "\(c.commitsToday)", "\(c.commits7)", "\(c.commits30)")])
             if let l7 = c.localCommits7, let l30 = c.localCommits30 {
-                Text(theme.name("Local git commits (your email, \(c.localRepos ?? 0) repos in ~/Projects etc., not deduped with GitHub): 7D \(l7) · 30D \(l30)"))
+                let roots = (c.localRoots?.isEmpty == false ? c.localRoots! : ["~/Projects", "~/Developer", "~/code", "~/src", "~/workspace"]).joined(separator: ", ")
+                Text(theme.name(T.t("dev.localRoots", "\(c.localRepos ?? 0)", roots, "\(l7)", "\(l30)")))
                     .font(theme.font(9)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
             }
             weekly("Merged PRs / week", c.mergedWeeks)
@@ -103,9 +138,9 @@ struct DevStatsDetail: View {
             if let v = e.valuePerPR { line("API value per PR", Fmt.amount(v, "usd")) }
             if let t = e.tokensPerPR { line("Tokens per PR", Fmt.compact(t)) }
             Divider()
-            Text(theme.name("\(e.placement.label) · \(String(format: "%.1f", c.prsPerWeek)) merged PRs/week"))
+            Text(theme.name(e.placement.label))
                 .font(theme.font(10, .semibold)).foregroundStyle(theme.fg)
-            Text(theme.name("vs " + PRBenchmark.source))
+            Text(theme.name(PRBenchmark.source))
                 .font(theme.font(8)).foregroundStyle(theme.dim).fixedSize(horizontal: false, vertical: true)
             Text(theme.name("Not a live leaderboard. GitHub counts via gh api search (your gh login). "
                             + "FX: open.er-api.com" + (dev.fxDate.map { " (\($0))" } ?? "") + ". Updated \(Fmt.clock(c.fetchedAt, now: Date()))."))
@@ -155,81 +190,6 @@ struct DevStatsDetail: View {
     }
 }
 
-// MARK: - Efficiency tier badge
-
-/// The "Elite · Top 10%" chip gets a slow warm pulse and halo; other tiers stay quiet.
-/// Animation is skipped when the system Reduce Motion setting is on.
-struct PlacementBadge: View {
-    let label: String
-    let elite: Bool
-    let theme: Theme
-
-    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-
-    var body: some View {
-        if elite, !reduceMotion {
-            TimelineView(.animation(minimumInterval: 1.0 / 16)) { ctx in
-                chip(at: ctx.date)
-            }
-        } else {
-            chip(at: nil)
-        }
-    }
-
-    private func chip(at date: Date?) -> some View {
-        let gold = Color(hex: "#F0D48A")
-        let amber = Color(hex: "#E8A34A")
-        // Calm 2.8s breath: 0 = rest, 1 = peak. Static elite uses a mid glow.
-        let breath = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 2.8) } ?? 0.62
-        let shimmer = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 3.6 + 0.7) } ?? 0.35
-        let label = Text(self.label)
-            .font(theme.font(9, .bold))
-            .foregroundStyle(elite ? Color(hex: "#F7E7B4") : theme.fg)
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .fixedSize()
-
-        return label
-            .background {
-                if elite {
-                    ZStack {
-                        // Soft halo that breathes — scale lives on the glow, not the text, so the row doesn't jump.
-                        Capsule()
-                            .fill(amber.opacity(0.28 + 0.32 * breath))
-                            .blur(radius: 5 + 2.5 * breath)
-                            .scaleEffect(x: 1.18 + 0.08 * breath, y: 1.55 + 0.20 * breath)
-                        Capsule()
-                            .fill(
-                                LinearGradient(
-                                    colors: [
-                                        gold.opacity(0.30 + 0.16 * breath),
-                                        amber.opacity(0.22 + 0.14 * breath)
-                                    ],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing
-                                )
-                            )
-                        Capsule()
-                            .strokeBorder(
-                                LinearGradient(
-                                    colors: [
-                                        Color.white.opacity(0.25 + 0.35 * shimmer),
-                                        gold.opacity(0.85),
-                                        amber.opacity(0.55)
-                                    ],
-                                    startPoint: UnitPoint(x: -0.2 + shimmer, y: 0),
-                                    endPoint: UnitPoint(x: 0.4 + shimmer, y: 1)
-                                ),
-                                lineWidth: 0.9
-                            )
-                    }
-                } else {
-                    Capsule().fill(theme.fg.opacity(0.12))
-                }
-            }
-            .shadow(color: elite ? gold.opacity(0.35 + 0.45 * breath) : .clear, radius: elite ? (4 + 3.5 * breath) : 0)
-            .shadow(color: elite ? amber.opacity(0.18 + 0.22 * breath) : .clear, radius: elite ? (8 + 4 * breath) : 0)
-            .accessibilityLabel(self.label)
-    }
-}
 
 /// A shareable card for the month so far, saved as PNG and copied to the clipboard.
 @MainActor

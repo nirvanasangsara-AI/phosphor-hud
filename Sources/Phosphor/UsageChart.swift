@@ -17,15 +17,18 @@ struct UsageChartView: View {
         return logs.daily.filter { keep.contains($0.day) }
     }
 
+    /// Dollars only when a price table is actually loaded. An empty table must not draw a $0 chart.
+    private var showCost: Bool { prefs.chartCost && logs.pricesReady }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Rectangle().fill(theme.dim.opacity(0.18)).frame(height: 1).padding(.bottom, 2)
             HStack(spacing: 6) {
-                Text(theme.name(prefs.chartCost ? "API-equivalent cost · 14 days" : "Tokens · 14 days"))
+                Text(theme.name(showCost ? "API-equivalent cost · 14 days" : "Tokens · 14 days"))
                     .font(theme.font(10, .semibold)).foregroundStyle(theme.dim)
                 Spacer(minLength: 4)
                 Button { prefs.chartCost.toggle() } label: {
-                    Text(theme.name(prefs.chartCost ? "tokens" : "cost")).font(theme.font(9, .semibold))
+                    Text(theme.name(showCost ? "tokens" : "cost")).font(theme.font(9, .semibold))
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .background(Capsule().fill(theme.fg.opacity(0.12)))
                         .foregroundStyle(theme.fg)
@@ -39,7 +42,7 @@ struct UsageChartView: View {
             } else {
                 Chart(rows) { r in
                     BarMark(x: .value("Day", DayKey.date(r.day) ?? Date(), unit: .day),
-                            y: .value(prefs.chartCost ? "USD" : "Tokens", prefs.chartCost ? r.cost : Double(r.tokens)))
+                            y: .value(showCost ? "USD" : "Tokens", showCost ? r.cost : Double(r.tokens)))
                         .foregroundStyle(by: .value("Tool", ProviderInfo.lookup(r.source).name))
                 }
                 .chartForegroundStyleScale(domain: sourcesShown.map { ProviderInfo.lookup($0).name },
@@ -58,7 +61,7 @@ struct UsageChartView: View {
                         AxisGridLine().foregroundStyle(theme.dim.opacity(0.25))
                         AxisValueLabel {
                             if let d = v.as(Double.self) {
-                                Text(prefs.chartCost ? (d == d.rounded() ? "$" + Fmt.compact(d) : Fmt.amount(d, "usd")) : Fmt.compact(d)).font(theme.font(8)).foregroundStyle(theme.dim)
+                                Text(showCost ? (d == d.rounded() ? "$" + Fmt.compact(d) : Fmt.amount(d, "usd")) : Fmt.compact(d)).font(theme.font(8)).foregroundStyle(theme.dim)
                             }
                         }
                     }
@@ -75,10 +78,15 @@ struct UsageChartView: View {
                 }
                 .frame(height: 110)
             }
-            HStack(spacing: 8) {
-                summary("Today", logs.total(days: 1))
-                summary("7D", logs.total(days: 7))
-                summary("30D", logs.total(days: 30))
+            if !logs.pricesReady && logs.total(days: 30).cost == 0 {
+                Text(theme.name(T.t("logs.priceMissing")))
+                    .font(theme.font(9, .semibold)).foregroundStyle(theme.warn).lineLimit(1)
+            } else {
+                HStack(spacing: 8) {
+                    summary("Today", logs.total(days: 1))
+                    summary("7D", logs.total(days: 7))
+                    summary("30D", logs.total(days: 30))
+                }
             }
             .help("Tokens counted from Claude Code / Codex / Gemini CLI / Cline / Roo Code logs on this Mac, priced at "
                   + "API list rates (LiteLLM's public price table). Subscriptions don't bill this way: it shows what the same "

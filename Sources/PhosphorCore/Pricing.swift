@@ -13,7 +13,12 @@ public struct ModelPrice: Codable, Sendable, Hashable {
 /// API list prices, from LiteLLM's public `model_prices_and_context_window.json`.
 /// Nothing is guessed: a model missing from the table has no price.
 public struct PriceTable: Sendable {
-    public static let sourceURL = URL(string: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json")!
+    /// GitHub's raw host first, then jsDelivr. A TLS failure on one host must not empty the table.
+    public static let sourceURLs: [URL] = [
+        URL(string: "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json")!,
+        URL(string: "https://cdn.jsdelivr.net/gh/BerriAI/litellm@main/model_prices_and_context_window.json")!,
+    ]
+    public static let sourceURL = sourceURLs[0]
     public private(set) var prices: [String: ModelPrice]
 
     public init(prices: [String: ModelPrice] = [:]) { self.prices = prices }
@@ -80,5 +85,109 @@ public struct PriceTable: Sendable {
         guard let p = price(for: model) else { return nil }
         return Double(u.input) * p.input + Double(u.output) * p.output
             + Double(u.cacheRead) * (p.cacheRead ?? p.input) + Double(u.cacheWrite) * (p.cacheWrite ?? p.input)
+    }
+}
+
+/// How often a downloaded table is trusted, and how soon a failed download is tried again.
+public enum PriceRefresh {
+    public static let timeout: TimeInterval = 20
+    public static let retryDelay: TimeInterval = 120
+    public static let cacheFresh: TimeInterval = 86_400
+
+    /// A fresh cache skips the network. A bundle, a parse failure, or an empty table does not.
+    public static func shouldFetch(cachedAt: Date?, ready: Bool, origin: String, now: Date = Date(), force: Bool = false) -> Bool {
+        if force { return true }
+        guard ready, origin == "cache", let cachedAt else { return true }
+        return now.timeIntervalSince(cachedAt) >= cacheFresh
+    }
+}
+
+public struct PriceHTTPResponse: Sendable {
+    public var status: Int
+    public var data: Data
+    public init(status: Int, data: Data) {
+        self.status = status
+        self.data = data
+    }
+}
+
+/// URL loading is injected so tests can fail the first host without touching the network.
+public protocol PriceURLLoading: Sendable {
+    func load(url: URL, timeout: TimeInterval) async throws -> PriceHTTPResponse
+}
+
+public struct URLSessionPriceLoader: PriceURLLoading {
+    public init() {}
+    public func load(url: URL, timeout: TimeInterval) async throws -> PriceHTTPResponse {
+        var req = URLRequest(url: url)
+        req.timeoutInterval = timeout
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        return PriceHTTPResponse(status: (resp as? HTTPURLResponse)?.statusCode ?? 0, data: data)
+    }
+}
+
+public struct PriceFetchResult: Sendable, Equatable {
+    public var data: Data
+    public var host: String
+    public init(data: Data, host: String) {
+        self.data = data
+        self.host = host
+    }
+}
+
+public enum PriceFetcher {
+    /// Tries each URL. A thrown error, a non-200, or a body that is not a price table falls through.
+    public static func fetch(urls: [URL] = PriceTable.sourceURLs,
+                              loader: any PriceURLLoading,
+                              timeout: TimeInterval = PriceRefresh.timeout) async -> PriceFetchResult? {
+        for url in urls {
+            let response: PriceHTTPResponse
+            do { response = try await loader.load(url: url, timeout: timeout) } catch { continue }
+            guard response.status == 200 else { continue }
+            guard let table = try? PriceTable(litellmJSON: response.data), !table.isEmpty else { continue }
+            return PriceFetchResult(data: response.data, host: url.host ?? url.absoluteString)
+        }
+        return nil
+    }
+}
+
+public enum PriceLoading {
+    public struct Outcome: Sendable {
+        public var table: PriceTable
+        public var origin: String
+        public var bundledOn: String?
+        public init(table: PriceTable, origin: String, bundledOn: String?) {
+            self.table = table
+            self.origin = origin
+            self.bundledOn = bundledOn
+        }
+    }
+
+    /// Date stamped into a bundled file by `scripts/update-bundled-prices.sh`. Absent on a raw download.
+    public static func bundledDate(_ data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return root["_phosphor_bundled"] as? String
+    }
+
+    /// Cache first. A cache that fails to parse falls through to the bundle.
+    /// A missing bundle is origin `none`, not an error (`swift run` has no app resources).
+    public static func choose(cache: Data?, bundle: Data?) -> Outcome {
+        if let cache, let table = try? PriceTable(litellmJSON: cache), !table.isEmpty {
+            return Outcome(table: table, origin: "cache", bundledOn: nil)
+        }
+        if let bundle, let table = try? PriceTable(litellmJSON: bundle), !table.isEmpty {
+            return Outcome(table: table, origin: "bundle", bundledOn: bundledDate(bundle))
+        }
+        return Outcome(table: PriceTable(), origin: "none", bundledOn: nil)
+    }
+}
+
+public enum PriceCache {
+    /// Writes the downloaded body atomically, then reads it back so a torn write cannot become the table.
+    public static func storeAndReload(data: Data, cache: URL, bundle: Data?) throws -> PriceLoading.Outcome {
+        try FileManager.default.createDirectory(at: cache.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try data.write(to: cache, options: .atomic)
+        let read = try Data(contentsOf: cache)
+        return PriceLoading.choose(cache: read, bundle: bundle)
     }
 }

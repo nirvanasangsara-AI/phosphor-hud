@@ -25,6 +25,8 @@ struct UsageWindow: Identifiable, Hashable {
     var measure: Measure = .quota
     /// Optional subtitle (model names, “API-equivalent from local logs”, …).
     var detail: String? = nil
+    /// When set, this is the whole reading (an `l10n:` key). No dollar amount is shown.
+    var notice: String? = nil
     /// Named tags drawn as compact badges (Ollama models, etc.).
     var tags: [String] = []
     /// Historical samples for a weekly sparkline (raw values, any unit).
@@ -45,6 +47,7 @@ struct UsageWindow: Identifiable, Hashable {
 
     /// "1.2M of 5M credits left", "$4.20 left", "820K tokens": nil for a plain quota.
     var amountText: String? {
+        if let notice { return T.detail(notice) }
         switch measure {
         case .quota: return nil
         case .balance(let left, let total, let unit):
@@ -362,6 +365,10 @@ final class Prefs: ObservableObject {
     @Published var hudHeight: Double { didSet { d.set(hudHeight, forKey: "hudHeight") } }
     /// English by default. "korean" or "system" (follow macOS) are chosen in the Language menu.
     @Published var language: String { didSet { d.set(language, forKey: "language") } }
+    /// GitHub login for PR counts. Empty uses whichever account `gh` is signed in as. Never a hardcoded login.
+    @Published var devAccount: String { didSet { d.set(devAccount, forKey: "devAccount") } }
+    /// Extra folders to scan for local git repos. Empty uses Projects, Developer, code, src, and workspace.
+    @Published var localRepoRoots: [String] { didSet { d.set(localRepoRoots, forKey: "localRepoRoots") } }
 
     var appLanguage: AppLanguage { AppLanguage(rawValue: language) ?? .english }
 
@@ -385,6 +392,8 @@ final class Prefs: ObservableObject {
         hudWidth = d.object(forKey: "hudWidth") as? Double ?? 0
         hudHeight = d.object(forKey: "hudHeight") as? Double ?? 0
         language = d.string(forKey: "language") ?? AppLanguage.english.rawValue
+        devAccount = d.string(forKey: "devAccount") ?? ""
+        localRepoRoots = d.stringArray(forKey: "localRepoRoots") ?? []
     }
 
     func hideProvider(_ id: String) {
