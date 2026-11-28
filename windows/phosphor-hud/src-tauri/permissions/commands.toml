@@ -1,4 +1,9 @@
 [[permission]]
+identifier = "allow-app-version"
+description = "Read the VERSION file baked into this build."
+commands.allow = ["app_version"]
+
+[[permission]]
 identifier = "allow-hud-state"
 description = "Read the current HUD snapshot."
 commands.allow = ["hud_state"]

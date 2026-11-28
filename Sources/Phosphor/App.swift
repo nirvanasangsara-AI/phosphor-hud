@@ -297,6 +297,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
+        let versionItem = NSMenuItem(title: "Phosphor \(Phosphor.version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+        menu.addItem(.separator())
+
         menu.addItem(item(panel.isVisible ? T.t("menu.hideHUD") : T.t("menu.showHUD"), #selector(toggleHUD), key: "h"))
         menu.addItem(item(T.t("menu.refreshNow"), #selector(refreshNow), key: "r"))
         menu.addItem(.separator())

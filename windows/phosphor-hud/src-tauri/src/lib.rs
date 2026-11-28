@@ -311,6 +311,11 @@ fn hide_hud_window(app: &AppHandle) {
 }
 
 #[tauri::command]
+fn app_version() -> String {
+    env!("PHOSPHOR_VERSION").to_string()
+}
+
+#[tauri::command]
 fn hud_state(prefs: State<Prefs>) -> HudModel {
     let demo = *prefs.demo.lock().unwrap_or_else(|e| e.into_inner());
     let show_dev = *prefs.show_dev.lock().unwrap_or_else(|e| e.into_inner());
@@ -361,6 +366,7 @@ pub fn run() {
         })
         .setup(|app| {
             if let Some(window) = app.get_webview_window("hud") {
+                let _ = window.set_title(&format!("Phosphor {}", env!("PHOSPHOR_VERSION")));
                 let hidden = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -369,11 +375,13 @@ pub fn run() {
                     }
                 });
             }
+            let version_label = format!("Phosphor {}", env!("PHOSPHOR_VERSION"));
+            let version = MenuItem::with_id(app, "version", version_label, false, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "Show HUD", true, None::<&str>)?;
             let hide = MenuItem::with_id(app, "hide", "Hide HUD", true, None::<&str>)?;
             let login = MenuItem::with_id(app, "login", "Start at login", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &hide, &login, &quit])?;
+            let menu = Menu::with_items(app, &[&version, &show, &hide, &login, &quit])?;
             let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
             let _tray = TrayIconBuilder::with_id("phosphor")
                 .menu(&menu)
@@ -415,6 +423,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_version,
             hud_state,
             hide_hud,
             show_hud,

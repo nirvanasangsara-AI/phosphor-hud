@@ -120,5 +120,9 @@ async function refresh() {
 
 document.getElementById("refresh").addEventListener("click", refresh);
 document.getElementById("hide").addEventListener("click", () => invoke("hide_hud"));
+invoke("app_version").then((version) => {
+  document.querySelector(".name").textContent = `Phosphor ${version}`;
+  document.title = `Phosphor ${version}`;
+});
 refresh();
 setInterval(refresh, 60_000);

@@ -1,4 +1,17 @@
-name: build
+# Builds a universal Phosphor.app, ad-hoc signs it, and packs Phosphor.dmg plus Phosphor.zip.
+#
+# A version tag (v*) publishes both files on the GitHub Release for that tag.
+# The tag must match the VERSION file. workflow_dispatch and other runs upload
+# the same files as Actions artifacts and do not publish a Release.
+#
+# Developer ID signing and notarization are optional. They run only when these
+# repository secrets are set, and are skipped when they are absent:
+#   APPLE_ID                       Apple ID email
+#   TEAM_ID                        Apple Developer Team ID
+#   APPLE_CERTIFICATE              the cert: base64-encoded Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD     password for that .p12
+#   APPLE_APP_SPECIFIC_PASSWORD    app-specific password used by notarytool
+name: release
 
 on:
   push:
@@ -10,22 +23,199 @@ on:
 jobs:
   macos:
     runs-on: macos-15
+    timeout-minutes: 45
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Build universal app
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          [[ "$GITHUB_REF_TYPE" == "tag" ]] || VERSION="0.0.0-dev"
-          UNIVERSAL=1 VERSION="$VERSION" ./scripts/build-app.sh
-          ditto -c -k --keepParent dist/Phosphor.app dist/Phosphor.zip
-      - uses: actions/upload-artifact@v4
         with:
-          name: Phosphor
+          # Full history so CFBundleVersion (git commit count) matches a local build.
+          fetch-depth: 0
+
+      - name: Check version
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          echo "VERSION file: $VERSION"
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME#v}"
+            if [[ "$TAG" != "$VERSION" ]]; then
+              echo "::error::Tag v$TAG does not match the VERSION file ($VERSION). Bump VERSION, commit it, then tag v$VERSION."
+              exit 1
+            fi
+          fi
+          echo "Build number: $(git rev-list --count HEAD)"
+
+      - name: Build universal Release app
+        run: |
+          set -euo pipefail
+          UNIVERSAL=1 ./scripts/build-app.sh
+          SHORT="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/Phosphor.app/Contents/Info.plist)"
+          BUILD="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' dist/Phosphor.app/Contents/Info.plist)"
+          echo "CFBundleShortVersionString=$SHORT"
+          echo "CFBundleVersion=$BUILD"
+          test "$SHORT" = "$(tr -d '[:space:]' < VERSION)"
+          [[ "$BUILD" =~ ^[0-9]+$ ]]
+
+      - name: Ad-hoc sign
+        run: |
+          set -euo pipefail
+          # codesign -s -  (ad-hoc). Apple Silicon will not run an unsigned binary.
+          # This replaces any identity build-app.sh may have picked on a developer machine.
+          codesign --force --deep -s - dist/Phosphor.app
+          codesign --verify --verbose=2 dist/Phosphor.app
+          codesign -dv dist/Phosphor.app 2>&1 | tee /tmp/phosphor-codesign.txt
+          grep -E -q 'Signature=adhoc|flags=0x2\(adhoc\)' /tmp/phosphor-codesign.txt
+          BIN="dist/Phosphor.app/Contents/MacOS/Phosphor"
+          lipo -info "$BIN"
+          lipo -info "$BIN" | grep -q arm64
+          lipo -info "$BIN" | grep -q x86_64
+
+      # OPTIONAL Developer ID signing. Skipped when APPLE_ID, TEAM_ID, or the
+      # cert (APPLE_CERTIFICATE) is absent. The ad-hoc signature from the
+      # previous step stays in place in that case.
+      - name: Developer ID sign (optional)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$APPLE_ID" || -z "$TEAM_ID" || -z "$APPLE_CERTIFICATE" ]]; then
+            echo "Developer ID secrets are not set (APPLE_ID, TEAM_ID, APPLE_CERTIFICATE)."
+            echo "Skipping Developer ID signing. The app stays ad-hoc signed."
+            exit 0
+          fi
+          if [[ -z "$APPLE_CERTIFICATE_PASSWORD" ]]; then
+            echo "::error::APPLE_CERTIFICATE is set but APPLE_CERTIFICATE_PASSWORD is empty."
+            exit 1
+          fi
+
+          KEYCHAIN="$RUNNER_TEMP/phosphor-developer-id.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+          cleanup() {
+            security delete-keychain "$KEYCHAIN" >/dev/null 2>&1 || true
+            rm -f "$RUNNER_TEMP/developer-id.p12"
+          }
+          trap cleanup EXIT
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+
+          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A -out "$RUNNER_TEMP/developer-id.p12"
+          security import "$RUNNER_TEMP/developer-id.p12" \
+            -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' | head -1)"
+          if [[ -z "$IDENTITY" ]]; then
+            echo "::error::The imported cert has no Developer ID Application identity."
+            security find-identity -v -p codesigning "$KEYCHAIN" || true
+            exit 1
+          fi
+          printf '%s\n' "$IDENTITY" | sed -E 's/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/[apple-id]/g' | sed 's/^/Signing with /'
+
+          codesign --force --deep --options runtime --timestamp --sign "$IDENTITY" --keychain "$KEYCHAIN" dist/Phosphor.app
+          codesign --verify --strict --verbose=2 dist/Phosphor.app
+          echo "DEVELOPER_ID_SIGNED=true" >> "$GITHUB_ENV"
+
+      - name: Package DMG and zip
+        run: |
+          set -euo pipefail
+          ./scripts/make-dmg.sh
+          rm -f dist/Phosphor.zip
+          ditto -c -k --keepParent dist/Phosphor.app dist/Phosphor.zip
+          ls -lh dist/Phosphor.dmg dist/Phosphor.zip
+
+      # OPTIONAL notarization. Runs only after a Developer ID signature, and
+      # only when APPLE_APP_SPECIFIC_PASSWORD is set. Otherwise the packages
+      # from the previous step are what gets uploaded.
+      - name: Notarize (optional)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          DEVELOPER_ID_SIGNED: ${{ env.DEVELOPER_ID_SIGNED }}
+        run: |
+          set -euo pipefail
+          if [[ "${DEVELOPER_ID_SIGNED:-}" != "true" ]]; then
+            echo "No Developer ID signature. Skipping notarization."
+            exit 0
+          fi
+          if [[ -z "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+            echo "APPLE_APP_SPECIFIC_PASSWORD is not set. The Developer ID signature stays; notarization is skipped."
+            exit 0
+          fi
+
+          echo "Notarizing the app so it can be stapled, then rebuilding the DMG and zip."
+          xcrun notarytool submit dist/Phosphor.zip \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple dist/Phosphor.app
+          ./scripts/make-dmg.sh
+          rm -f dist/Phosphor.zip
+          ditto -c -k --keepParent dist/Phosphor.app dist/Phosphor.zip
+
+          echo "Notarizing Phosphor.dmg."
+          xcrun notarytool submit dist/Phosphor.dmg \
+            --apple-id "$APPLE_ID" \
+            --team-id "$TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait
+          xcrun stapler staple dist/Phosphor.dmg
+          echo "NOTARIZED=true" >> "$GITHUB_ENV"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: Phosphor-dmg
+          path: dist/Phosphor.dmg
+          if-no-files-found: error
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: Phosphor-zip
           path: dist/Phosphor.zip
-      - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
+          if-no-files-found: error
+
+      - name: Release notes
+        if: github.ref_type == 'tag'
+        env:
+          DEVELOPER_ID_SIGNED: ${{ env.DEVELOPER_ID_SIGNED }}
+          NOTARIZED: ${{ env.NOTARIZED }}
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < VERSION)"
+          {
+            echo "Phosphor ${VERSION}"
+            echo
+            echo "Open **Phosphor.dmg** and drag Phosphor to Applications. **Phosphor.zip** is the same app if a disk image does not open."
+            echo
+            if [[ "${NOTARIZED:-}" == "true" ]]; then
+              echo "This build is signed with a Developer ID and notarized."
+            elif [[ "${DEVELOPER_ID_SIGNED:-}" == "true" ]]; then
+              echo "This build is signed with a Developer ID. It is not notarized, so the first launch may still need a right-click and Open."
+            else
+              echo "This build is not notarized. The first time you open it, right-click Phosphor and choose Open. On macOS 15 and later you can also use System Settings, Privacy and Security, Open Anyway."
+            fi
+          } > dist/RELEASE_NOTES.md
+
+      - name: GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Phosphor.zip
+          name: Phosphor ${{ github.ref_name }}
+          body_path: dist/RELEASE_NOTES.md
+          files: |
+            dist/Phosphor.dmg
+            dist/Phosphor.zip
+          fail_on_unmatched_files: true
