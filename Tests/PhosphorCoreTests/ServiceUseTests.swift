@@ -21,5 +21,19 @@ import Testing
         #expect(ServiceUse.inUse(.liveReading))
         #expect(!ServiceUse.inUse(.installOnly))
         #expect(!ServiceUse.inUse(.absent))
+        // The reader still says "Installed", but a credential file was found.
+        let placeholder = ServiceUse.presence(forMessage: "Installed (~/.config/amp) · no usage API — hover for billing screen", connected: false)
+        #expect(placeholder == .installOnly)
+        #expect(ServiceUse.shown(display: .auto, inUse: ServiceUse.inUse(placeholder), hasUseEvidence: true))
+        #expect(!ServiceUse.shown(display: .hidden, inUse: false, hasUseEvidence: true))
+        #expect(ServiceUse.presence(forMessage: "Login found (~/.aider.conf.yml) · no usage API — hover for billing screen", connected: false) == .signedIn)
+    }
+
+    @Test func localServersAreProbedWhenInstalled() {
+        #expect(ServiceUse.shouldProbe(localServer: true, installed: true, display: .auto, enabled: false))
+        #expect(!ServiceUse.shouldProbe(localServer: true, installed: true, display: .hidden, enabled: false))
+        #expect(!ServiceUse.shouldProbe(localServer: false, installed: true, display: .auto, enabled: false))
+        #expect(ServiceUse.shouldProbe(localServer: false, installed: false, display: .auto, enabled: true))
+        #expect(ServiceUse.shouldProbe(localServer: true, installed: false, display: .always, enabled: true))
     }
 }

@@ -30,7 +30,7 @@ struct InstalledSource: UsageSource {
         let msg: String
         switch evidence {
         case "billing-screens.json"?: msg = "No usage API · plan/price from its billing screen (hover)"
-        case let e?: msg = "Installed (\(e)) · no usage API — hover for billing screen"
+        case let e?: msg = "Login found (\(e)) · no usage API — hover for billing screen"
         case nil: msg = spec.screenOnly ? "Web only · read \(spec.billingURL ?? "its settings page") into billing-screens.json"
                                         : "Turned on · not found on this Mac"
         }

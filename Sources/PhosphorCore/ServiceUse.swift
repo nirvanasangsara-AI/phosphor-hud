@@ -31,12 +31,22 @@ public enum ServiceUse {
         case absent
     }
 
-    public static func shown(display: Display, inUse: Bool) -> Bool {
+    /// `hasUseEvidence` is a credential file, usage log, API key, or billing-screen hit recorded by
+    /// the registry. It keeps the row even when the reader still phrases its placeholder as "Installed".
+    public static func shown(display: Display, inUse: Bool, hasUseEvidence: Bool = false) -> Bool {
         switch display {
         case .always: return true
         case .hidden: return false
-        case .auto: return inUse
+        case .auto: return inUse || hasUseEvidence
         }
+    }
+
+    /// Local servers are probed whenever the app is installed, so a running LM Studio or Ollama
+    /// can answer. The row is still hidden until that answer, or other use evidence, says so.
+    public static func shouldProbe(localServer: Bool, installed: Bool, display: Display, enabled: Bool) -> Bool {
+        if display == .hidden { return false }
+        if enabled { return true }
+        return localServer && installed
     }
 
     public static func inUse(_ presence: Presence) -> Bool {

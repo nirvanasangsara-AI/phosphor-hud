@@ -21,7 +21,12 @@ final class ProviderRegistry: ObservableObject {
     var extras: [ProviderSpec] { ProviderCatalog.all.filter { !Self.native.contains($0.id) } }
 
     var enabledExtras: [ProviderSpec] {
-        extras.filter { isEnabled($0.id) }
+        extras.filter { spec in
+            ServiceUse.shouldProbe(localServer: spec.sources.contains(.localServer),
+                                   installed: installed[spec.id] != nil,
+                                   display: Prefs.shared.display(for: spec.id),
+                                   enabled: isEnabled(spec.id))
+        }
     }
 
     func isEnabled(_ id: String) -> Bool {

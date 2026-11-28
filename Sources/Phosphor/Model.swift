@@ -454,7 +454,8 @@ final class Prefs: ObservableObject {
         case .error(let message):
             presence = (message.contains("expired") || message.hasPrefix("HTTP")) ? .signedIn : .absent
         }
-        return ServiceUse.shown(display: display(for: snap.id), inUse: ServiceUse.inUse(presence))
+        let evidenced = ProviderRegistry.shared.detected[snap.id] != nil
+        return ServiceUse.shown(display: display(for: snap.id), inUse: ServiceUse.inUse(presence), hasUseEvidence: evidenced)
     }
 
     func hideProvider(_ id: String) {
