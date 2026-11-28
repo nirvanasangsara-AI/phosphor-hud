@@ -18,13 +18,14 @@ import Testing
             try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: dir.path)
         }
         let base = Date(timeIntervalSince1970: 1_700_000_000)
-        try repo("self", modified: base)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("node_modules/hidden/.git"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent(".build/hidden/.git"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: root.appendingPathComponent("dist/hidden/.git"), withIntermediateDirectories: true)
-        try repo("group/child", modified: base.addingTimeInterval(10))
         try FileManager.default.createDirectory(at: root.appendingPathComponent("group/child/nested/.git"), withIntermediateDirectories: true)
-        try repo("group/too/deep", modified: base.addingTimeInterval(50))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("group/too/deep/.git"), withIntermediateDirectories: true)
+        // Set dates after the tree exists. Creating a nested .git would otherwise stamp its parent as newest.
+        try repo("self", modified: base)
+        try repo("group/child", modified: base.addingTimeInterval(10))
 
         var found = LocalRepoScan.discover(roots: [root]).map { $0.lastPathComponent }
         #expect(found.contains("self"))
@@ -39,7 +40,9 @@ import Testing
         found = LocalRepoScan.discover(roots: [root]).map(\.lastPathComponent)
         #expect(found.count == 30)
         #expect(found.first == "repo-34")
+        #expect(found.contains("repo-10"))
         #expect(!found.contains("repo-0"))
+        #expect(!found.contains("self"))
         #expect(LocalRepoScan.displayPath(root, home: home) == "~/workspace")
         try? FileManager.default.removeItem(at: home)
     }
