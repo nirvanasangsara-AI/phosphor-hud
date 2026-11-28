@@ -32,6 +32,9 @@ jobs:
           # Full history so CFBundleVersion (git commit count) matches a local build.
           fetch-depth: 0
 
+      - name: Test
+        run: swift test
+
       - name: Check version
         run: |
           set -euo pipefail

@@ -11,6 +11,7 @@ final class UsageLogs: ObservableObject {
         var week: [String: UsageLedger.Summary] = [:]
         var month: [String: UsageLedger.Summary] = [:]
         var scannedAt: Date?
+        var pricesReady = false
     }
 
     @Published private(set) var daily: [UsageLedger.DayTotal] = []
@@ -18,15 +19,27 @@ final class UsageLogs: ObservableObject {
     @Published private(set) var scanning = false
     @Published private(set) var pricesAt: Date?
     @Published private(set) var priced = 0
+    /// Set when every price URL failed. Rows use this only while the table is still empty.
+    @Published private(set) var priceError: String?
+    /// Host that supplied the cached file (`raw.githubusercontent.com` or `cdn.jsdelivr.net`).
+    @Published private(set) var priceHost: String?
+    /// `cache`, `bundle`, `demo`, or `none`.
+    @Published private(set) var priceOrigin = "none"
+    @Published private(set) var bundledPriceDate: String?
+    var pricesReady: Bool { priced > 0 }
     private var ledger = UsageLedger()
     private var prices = PriceTable()
     private var lastScan: Date?
+    private var priceBusy = false
+    private var priceRetry: Task<Void, Never>?
+    private let loader: any PriceURLLoading
 
     nonisolated static var ledgerFile: URL { Paths.support.appendingPathComponent("usage-ledger.json") }
     nonisolated static var pricesFile: URL { Paths.caches.appendingPathComponent("litellm-prices.json") }
     static let sources = ["claude", "codex", "gemini", "cline", "roo"]
 
-    init(load: Bool) {
+    init(load: Bool, loader: any PriceURLLoading = URLSessionPriceLoader()) {
+        self.loader = loader
         guard load else { return }
         if let d = try? Data(contentsOf: Self.ledgerFile), let l = try? JSONDecoder().decode(UsageLedger.self, from: d) { ledger = l }
         loadPrices()
@@ -34,13 +47,14 @@ final class UsageLogs: ObservableObject {
     }
 
     /// Scans at most every 10 minutes (incremental: only bytes added since the last scan).
+    /// Price retries are separate: a failed download tries again in two minutes even while this guard holds.
     func refreshIfDue(force: Bool = false) {
         guard !scanning, force || (lastScan.map { Date().timeIntervalSince($0) > 600 } ?? true) else { return }
         scanning = true
         lastScan = Date()
         let start = ledger
         Task {
-            await updatePricesIfStale()
+            async let priceUpdate: Void = updatePricesIfStale()
             let scanned = await Task.detached(priority: .background) { () -> UsageLedger in
                 var l = start
                 LogScanner().scan(&l)
@@ -50,10 +64,16 @@ final class UsageLogs: ObservableObject {
                 }
                 return l
             }.value
+            _ = await priceUpdate
             ledger = scanned
             recompute()
             scanning = false
         }
+    }
+
+    /// Banner click. Does not wait for the log-scan guard.
+    func refreshPrices() {
+        Task { await updatePricesIfStale(force: true) }
     }
 
     func models(_ source: String, days: Int) -> [(model: String, usage: TokenUsage, cost: Double?)] {
@@ -72,7 +92,7 @@ final class UsageLogs: ObservableObject {
 
     private func recompute() {
         daily = ledger.dailyTotals(prices: prices)
-        var s = Snapshot(scannedAt: ledger.scannedAt)
+        var s = Snapshot(scannedAt: ledger.scannedAt, pricesReady: pricesReady)
         for src in Self.sources {
             s.today[src] = ledger.summary(lastDays: 1, source: src, prices: prices)
             s.week[src] = ledger.summary(lastDays: 7, source: src, prices: prices)
@@ -110,25 +130,66 @@ final class UsageLogs: ObservableObject {
         }
         demoDaily = out
         daily = out
+        priced = 1
+        priceOrigin = "demo"
+        priceError = nil
     }
 
-    // MARK: Prices (public file, refreshed daily)
+    // MARK: Prices (cache, then the copy bundled in the app, then the network)
 
-    private func loadPrices() {
-        guard let d = try? Data(contentsOf: Self.pricesFile), let t = try? PriceTable(litellmJSON: d) else { return }
-        prices = t
-        priced = t.prices.count
-        pricesAt = (try? FileManager.default.attributesOfItem(atPath: Self.pricesFile.path))?[.modificationDate] as? Date
+    private func bundleData() -> Data? {
+        guard let url = Bundle.main.url(forResource: "litellm-prices", withExtension: "json") else { return nil }
+        return try? Data(contentsOf: url)
     }
 
-    private func updatePricesIfStale() async {
-        if let at = pricesAt, Date().timeIntervalSince(at) < 86_400, !prices.isEmpty { return }
-        var req = URLRequest(url: PriceTable.sourceURL)
-        req.timeoutInterval = 30
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              (resp as? HTTPURLResponse)?.statusCode == 200, (try? PriceTable(litellmJSON: data)) != nil else { return }
-        try? FileManager.default.createDirectory(at: Paths.caches, withIntermediateDirectories: true)
-        try? data.write(to: Self.pricesFile, options: .atomic)
-        loadPrices()
+    private func loadPrices(host: String? = nil) {
+        let cache = try? Data(contentsOf: Self.pricesFile)
+        let outcome = PriceLoading.choose(cache: cache, bundle: bundleData())
+        prices = outcome.table
+        priced = outcome.table.prices.count
+        priceOrigin = outcome.origin
+        bundledPriceDate = outcome.bundledOn
+        if outcome.origin == "cache" {
+            pricesAt = (try? FileManager.default.attributesOfItem(atPath: Self.pricesFile.path))?[.modificationDate] as? Date
+            priceHost = host ?? (try? String(contentsOf: Self.pricesFile.appendingPathExtension("source"), encoding: .utf8))
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        }
+        if !outcome.table.isEmpty { priceError = nil }
+    }
+
+    private func updatePricesIfStale(force: Bool = false) async {
+        guard !priceBusy else { return }
+        guard force || PriceRefresh.shouldFetch(cachedAt: pricesAt, ready: pricesReady, origin: priceOrigin) else { return }
+        priceBusy = true
+        defer { priceBusy = false }
+        if let got = await PriceFetcher.fetch(loader: loader) {
+            do {
+                let outcome = try PriceCache.storeAndReload(data: got.data, cache: Self.pricesFile, bundle: bundleData())
+                try? got.host.write(to: Self.pricesFile.appendingPathExtension("source"), atomically: true, encoding: .utf8)
+                prices = outcome.table
+                priced = outcome.table.prices.count
+                priceOrigin = outcome.origin
+                bundledPriceDate = nil
+                pricesAt = Date()
+                priceHost = got.host
+                priceError = nil
+                priceRetry?.cancel()
+                recompute()
+                return
+            } catch {
+                // Fall through to the same visible failure as a refused download.
+            }
+        }
+        priceError = "price table not loaded"
+        schedulePriceRetry()
+    }
+
+    private func schedulePriceRetry() {
+        priceRetry?.cancel()
+        priceRetry = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(PriceRefresh.retryDelay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await self?.updatePricesIfStale(force: true)
+        }
     }
 }

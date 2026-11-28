@@ -301,7 +301,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        let versionItem = NSMenuItem(title: "Phosphor \(Phosphor.version)", action: nil, keyEquivalent: "")
+        let versionItem = NSMenuItem(title: Phosphor.identity, action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
         menu.addItem(.separator())
@@ -460,6 +460,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let devStats = item(T.t("menu.devStats"), #selector(toggleDevStats))
         devStats.state = prefs.showDevStats ? .on : .off
         menu.addItem(devStats)
+        menu.addItem(githubAccountItem())
+        menu.addItem(item(T.t("menu.repoRoots"), #selector(pickRepoRoots)))
+        if !prefs.localRepoRoots.isEmpty {
+            menu.addItem(item(T.t("menu.repoRootsReset"), #selector(resetRepoRoots)))
+        }
         let phone = item(T.t("menu.phoneSync"), #selector(showPhoneSync))
         phone.state = prefs.phoneSync ? .on : .off
         menu.addItem(phone)
@@ -514,6 +519,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let i = NSMenuItem(title: title, action: action, keyEquivalent: key)
         i.target = self
         return i
+    }
+
+    private func githubAccountItem() -> NSMenuItem {
+        let shown = prefs.devAccount.isEmpty ? (store.dev.counts?.login ?? "") : prefs.devAccount
+        let title = shown.isEmpty ? T.t("menu.githubAccountUnset") : T.t("menu.githubAccount", shown)
+        let accounts = NSMenu()
+        let current = item(T.t("menu.githubCurrent"), #selector(pickGitHubAccount(_:)))
+        current.representedObject = ""
+        current.state = prefs.devAccount.isEmpty ? .on : .off
+        accounts.addItem(current)
+        for login in store.dev.knownAccounts {
+            let i = item("@\(login)", #selector(pickGitHubAccount(_:)))
+            i.representedObject = login
+            i.state = prefs.devAccount.caseInsensitiveCompare(login) == .orderedSame ? .on : .off
+            accounts.addItem(i)
+        }
+        accounts.addItem(.separator())
+        accounts.addItem(item(T.t("menu.githubOther"), #selector(editGitHubAccount)))
+        return submenu(title, accounts)
     }
 
     private func submenu(_ title: String, _ menu: NSMenu) -> NSMenuItem {
@@ -611,6 +635,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleDevStats() {
         prefs.showDevStats.toggle()
         if prefs.showDevStats { store.dev.refreshIfDue(force: true); store.logs.refreshIfDue() }
+    }
+    @objc private func pickGitHubAccount(_ sender: NSMenuItem) {
+        store.dev.useAccount((sender.representedObject as? String) ?? "")
+    }
+    @objc private func editGitHubAccount() {
+        let alert = NSAlert()
+        alert.messageText = T.t("menu.githubAccountTitle")
+        alert.informativeText = T.t("menu.githubAccountHelp")
+        alert.addButton(withTitle: T.t("menu.githubSave"))
+        alert.addButton(withTitle: T.t("menu.githubCancel"))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        field.stringValue = prefs.devAccount
+        field.placeholderString = "login"
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        store.dev.useAccount(field.stringValue)
+    }
+    @objc private func pickRepoRoots() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.prompt = T.t("menu.githubSave")
+        guard panel.runModal() == .OK else { return }
+        store.dev.useRepoRoots(panel.urls.map(\.path))
+    }
+    @objc private func resetRepoRoots() {
+        store.dev.useRepoRoots([])
     }
     @objc private func showPhoneSync() { PhoneSyncPanel.shared.show(store: store) }
     @objc private func toggleChart() { prefs.showChart.toggle(); if prefs.showChart { store.logs.refreshIfDue() } }

@@ -1,8 +1,8 @@
 import Foundation
 import PhosphorCore
 
-/// GitHub PRs and commits for the account the GitHub CLI is signed in to, via `gh api` (gh's own
-/// login: Phosphor never sees the token), plus commits in local repositories. Refreshed every 30 min.
+/// GitHub PRs and commits via `gh api` (gh's own login: Phosphor never sees or reads a token file),
+/// plus commits in local repositories. Refreshed every 5 minutes.
 @MainActor
 final class DevStatsService: ObservableObject {
     @Published private(set) var counts: DevCounts?
@@ -11,12 +11,17 @@ final class DevStatsService: ObservableObject {
     /// Units of each currency per 1 USD, from open.er-api.com (ExchangeRate-API), cached for a day.
     @Published private(set) var fx: [String: Double] = [:]
     @Published private(set) var fxDate: String?
+    /// Logins from `gh auth status`. Tokens in that output are discarded.
+    @Published private(set) var knownAccounts: [String] = []
 
     static var cacheFile: URL { Paths.support.appendingPathComponent("dev-stats.json") }
     static var fxFile: URL { Paths.caches.appendingPathComponent("fx-usd.json") }
     static let fxURL = URL(string: "https://open.er-api.com/v6/latest/USD")!
 
     private let demo: Bool
+    private var timer: Timer?
+    /// Bumped when a newer refresh starts, so the older task cannot publish or save.
+    private var generation = RefreshGeneration()
 
     init(demo: Bool = false) {
         self.demo = demo
@@ -27,7 +32,10 @@ final class DevStatsService: ObservableObject {
             c.openedToday = 3; c.opened7 = 21; c.opened30 = 77
             c.commitsToday = 9; c.commits7 = 142; c.commits30 = 583
             c.mergedWeeks = [18, 15, 21, 14]; c.commitWeeks = [142, 131, 170, 119]
+            c.merged30Prev = 60
+            c.mergedDaily = [1, 0, 2, 1, 3, 2, 1, 0, 2, 1, 2, 1, 0, 2]
             c.localCommits7 = 96; c.localCommits30 = 402; c.localRepos = 6
+            c.localRoots = ["~/Projects", "~/Developer", "~/code", "~/src", "~/workspace"]
             counts = c
             return
         }
@@ -36,49 +44,131 @@ final class DevStatsService: ObservableObject {
             counts = try? dec.decode(DevCounts.self, from: d)
         }
         loadFX()
+        timer = Timer.scheduledTimer(withTimeInterval: DevStatsSchedule.interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshIfDue() }
+        }
+    }
+
+    /// Empty text selects the account `gh` is signed in as. Anything else must be a GitHub login.
+    func useAccount(_ raw: String) {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+        // Drop any query already running for the previous login before it can save those counts back.
+        _ = generation.issue()
+        counts = nil
+        busy = false
+        try? FileManager.default.removeItem(at: Self.cacheFile)
+        if trimmed.isEmpty {
+            Prefs.shared.devAccount = ""
+            problem = nil
+            refreshIfDue(force: true)
+            return
+        }
+        guard let login = GHLogin.normalize(trimmed) else {
+            Prefs.shared.devAccount = trimmed
+            problem = "unknown-account:\(trimmed)"
+            return
+        }
+        Prefs.shared.devAccount = login
+        problem = nil
+        refreshIfDue(force: true)
+    }
+
+    func useRepoRoots(_ paths: [String]) {
+        Prefs.shared.localRepoRoots = paths
+        Task { await rescanLocal() }
     }
 
     func refreshIfDue(force: Bool = false) {
-        guard !demo, !busy, force || (counts.map { Date().timeIntervalSince($0.fetchedAt) > 1800 } ?? true) else { return }
+        guard !demo else { return }
+        guard DevStatsSchedule.shouldStart(enabled: Prefs.shared.showDevStats, busy: busy, force: force,
+                                           fetchedAt: counts?.fetchedAt) else { return }
+        let ticket = generation.issue()
         busy = true
         Task {
-            defer { busy = false }
+            defer { if self.generation.isCurrent(ticket) { self.busy = false } }
             await updateFXIfStale()
-            guard let gh = Shell.which("gh") else { problem = "GitHub CLI (gh) not installed"; return }
-            guard let login = try? await Shell.run(gh, ["api", "user", "--jq", ".login"], timeout: 15), !login.isEmpty else {
-                problem = "gh isn't signed in (gh auth login)"; return
+            guard generation.isCurrent(ticket) else { return }
+            guard let gh = Shell.which("gh") else {
+                problem = "GitHub CLI (gh) not installed"
+                return
             }
+            if let status = try? await Shell.run(gh, ["auth", "status"], timeout: 15, tolerateFailure: true) {
+                guard generation.isCurrent(ticket) else { return }
+                knownAccounts = GHAuthAccounts.logins(from: status)
+            }
+            guard generation.isCurrent(ticket) else { return }
+            let wanted = Prefs.shared.devAccount.trimmingCharacters(in: .whitespacesAndNewlines)
+            let login: String
+            if wanted.isEmpty {
+                guard let current = try? await Shell.run(gh, ["api", "user", "--jq", ".login"], timeout: 15), !current.isEmpty else {
+                    guard generation.isCurrent(ticket) else { return }
+                    problem = "gh isn't signed in (gh auth login)"
+                    return
+                }
+                login = current
+            } else if let normalized = GHLogin.normalize(wanted),
+                      let found = try? await Shell.run(gh, ["api", "users/\(normalized)", "--jq", ".login"], timeout: 15),
+                      !found.isEmpty {
+                login = found
+            } else {
+                guard generation.isCurrent(ticket) else { return }
+                counts = nil
+                problem = "unknown-account:\(wanted)"
+                return
+            }
+            guard generation.isCurrent(ticket) else { return }
             var results: [String: Int] = [:]
             for q in GitHubQueries.all(login: login) {
-                // Search allows 30 requests a minute; 15 queries a refresh stays well inside it.
+                guard generation.isCurrent(ticket) else { return }
+                // Search allows 30 requests a minute. 16 queries every 5 minutes stays inside that.
                 if let out = try? await Shell.run(gh, ["api", "-X", "GET", q.endpoint, "-f", "q=\(q.q)", "--jq", ".total_count"], timeout: 20),
                    let n = Int(out) { results[q.key] = n }
             }
-            guard results["merged30"] != nil else { problem = "GitHub search didn't answer"; return }
+            guard generation.isCurrent(ticket) else { return }
+            guard results["merged30"] != nil else {
+                problem = "GitHub search didn't answer"
+                return
+            }
             var c = GitHubQueries.counts(login: login, results: results)
+            if let raw = try? await Shell.run(gh, ["api", "graphql", "-f", "query=\(GitHubQueries.mergedDailyGraphQL)",
+                                                   "-f", "search=\(GitHubQueries.mergedDailySearch(login: login))"], timeout: 20),
+               let parsed = MergedSeries.parse(graphqlJSON: Data(raw.utf8)),
+               let daily = MergedSeries.dailyCounts(dates: parsed.dates, total: parsed.total, now: Date(), timeZone: .current) {
+                c.mergedDaily = daily
+            }
+            guard generation.isCurrent(ticket) else { return }
             let local = await Self.localCommits()
-            c.localCommits7 = local.d7; c.localCommits30 = local.d30; c.localRepos = local.repos
+            guard generation.isCurrent(ticket) else { return }
+            c.localCommits7 = local.d7; c.localCommits30 = local.d30; c.localRepos = local.repos; c.localRoots = local.roots
             counts = c
             problem = nil
-            let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
-            try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
-            try? enc.encode(c).write(to: Self.cacheFile, options: .atomic)
+            save(c)
         }
     }
 
-    /// Commits by your git email in repositories directly under ~/Projects, ~/Developer, ~/code, ~/src (all branches, deduplicated).
-    static func localCommits() async -> (d7: Int, d30: Int, repos: Int) {
+    private func rescanLocal() async {
+        let local = await Self.localCommits()
+        guard var c = counts else { refreshIfDue(force: true); return }
+        c.localCommits7 = local.d7; c.localCommits30 = local.d30; c.localRepos = local.repos; c.localRoots = local.roots
+        counts = c
+        save(c)
+    }
+
+    private func save(_ c: DevCounts) {
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        try? FileManager.default.createDirectory(at: Paths.support, withIntermediateDirectories: true)
+        try? enc.encode(c).write(to: Self.cacheFile, options: .atomic)
+    }
+
+    /// Commits by your git email. Roots default to Projects, Developer, code, src, and workspace, two levels deep, 30 newest repos.
+    static func localCommits() async -> (d7: Int, d30: Int, repos: Int, roots: [String]) {
+        let roots = LocalRepoScan.roots(home: Paths.home, custom: Prefs.shared.localRepoRoots)
+        let shown = roots.map { LocalRepoScan.displayPath($0, home: Paths.home) }
         guard let git = Shell.which("git", extra: ["/usr/bin/git"]),
-              let email = try? await Shell.run(git, ["config", "--global", "user.email"], timeout: 5), !email.isEmpty else { return (0, 0, 0) }
-        let fm = FileManager.default
-        var repos: [URL] = []
-        for root in ["Projects", "Developer", "code", "src"] {
-            let dir = Paths.home.appendingPathComponent(root)
-            for name in (try? fm.contentsOfDirectory(atPath: dir.path)) ?? [] {
-                let r = dir.appendingPathComponent(name)
-                if fm.fileExists(atPath: r.appendingPathComponent(".git").path) { repos.append(r) }
-            }
+              let email = try? await Shell.run(git, ["config", "--global", "user.email"], timeout: 5), !email.isEmpty else {
+            return (0, 0, 0, shown)
         }
+        let repos = LocalRepoScan.discover(roots: roots)
         var d7 = 0, d30 = 0
         for r in repos {
             for (days, isWeek) in [(30, false), (7, true)] {
@@ -88,7 +178,7 @@ final class DevStatsService: ObservableObject {
                 if isWeek { d7 += n } else { d30 += n }
             }
         }
-        return (d7, d30, repos.count)
+        return (d7, d30, repos.count, shown)
     }
 
     // MARK: Exchange rates (public, no key)

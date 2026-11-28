@@ -45,7 +45,7 @@ enum HTTP {
 enum Shell {
     /// Runs a process off the main thread with a hard timeout. Returns stdout.
     static func run(_ path: String, _ args: [String], timeout: TimeInterval = 20,
-                    env extra: [String: String] = [:], cwd: URL? = nil) async throws -> String {
+                    env extra: [String: String] = [:], cwd: URL? = nil, tolerateFailure: Bool = false) async throws -> String {
         try await withCheckedThrowingContinuation { cont in
             DispatchQueue.global(qos: .utility).async {
                 let p = Process()
@@ -68,7 +68,7 @@ enum Shell {
                 let data = out.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
                 killer.cancel()
-                if p.terminationStatus == 0 {
+                if p.terminationStatus == 0 || tolerateFailure {
                     cont.resume(returning: String(decoding: data, as: UTF8.self)
                         .trimmingCharacters(in: .whitespacesAndNewlines))
                 } else {

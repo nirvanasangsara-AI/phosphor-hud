@@ -136,8 +136,11 @@ Cloud Billing BigQuery export.
 Phosphor reads Claude Code, Codex, Gemini CLI, Cline and Roo Code session logs **read-only** (usage numbers
 only, never prompts or replies), incrementally by byte offset, with resumed-session duplicates removed. The
 first scan only reaches back 7 days and runs at background priority; history then grows day by day. Tokens
-are priced at API list rates from LiteLLM's public price table (cached for a day); models without a list price
-are counted but left unpriced. The chart button in the header (or **Usage chart** in the menu) shows 14 days
+are priced at API list rates from LiteLLM's public price table (cached for a day). The download tries
+`raw.githubusercontent.com` and then `cdn.jsdelivr.net`. If both fail, the copy bundled in the app
+(`packaging/litellm-prices.min.json`, refreshed with `./scripts/update-bundled-prices.sh`) is used, and the
+panel says so. An empty table is shown as "price table not loaded · retrying" instead of $0. Models that are
+genuinely missing from a loaded table are counted but left unpriced. The chart button in the header (or **Usage chart** in the menu) shows 14 days
 stacked by tool, with Today / 7D / 30D totals. Subscriptions don't bill this way: it's what the same use would
 cost on the API. `Phosphor --scan-logs` prints the totals.
 

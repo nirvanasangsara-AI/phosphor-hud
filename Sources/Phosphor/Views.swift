@@ -31,8 +31,12 @@ struct RootView: View {
     private func loggedLine(_ id: String) -> String? {
         let waiting = id == "claude" ? store.claudeWaiting : nil
         guard ["claude", "codex"].contains(id), let w = store.logs.snapshot.week[id], w.tokens > 0 else { return waiting }
+        if !store.logs.pricesReady && w.cost == 0 {
+            let line = "Logs 7D: \(Fmt.compact(Double(w.tokens))) tokens · \(T.t("logs.priceMissing"))"
+            return waiting.map { "\($0).\n\(line)" } ?? line
+        }
         let cost = w.cost > 0 ? " · ≈\(Fmt.amount(w.cost, "usd")) API-equivalent" : ""
-        let unpriced = w.unpricedTokens > 0 ? " (\(Fmt.compact(Double(w.unpricedTokens))) unpriced)" : ""
+        let unpriced = store.logs.pricesReady && w.unpricedTokens > 0 ? " (\(Fmt.compact(Double(w.unpricedTokens))) unpriced)" : ""
         let line = "Logs 7D: \(Fmt.compact(Double(w.tokens))) tokens\(cost)\(unpriced)"
         return waiting.map { "\($0).\n\(line)" } ?? line
     }
@@ -52,6 +56,20 @@ struct RootView: View {
         let items = store.visible
         VStack(alignment: .leading, spacing: prefs.compact ? 6 : 10) {
             Header(theme: theme, store: store, now: now, count: items.count)
+            if !store.logs.pricesReady {
+                Button { store.logs.refreshPrices() } label: {
+                    Text(theme.name(T.t("logs.priceBanner")))
+                        .font(theme.font(10, .semibold))
+                        .foregroundStyle(theme.warn)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.plain)
+                .help(T.t("logs.priceBanner"))
+            } else if store.logs.priceOrigin == "bundle" {
+                Text(theme.name(T.t("logs.bundledPrices", store.logs.bundledPriceDate ?? "")))
+                    .font(theme.font(9)).foregroundStyle(theme.dim).lineLimit(1)
+            }
             if prefs.showDevStats && theme.layout != .raid { DevStatsView(store: store, dev: store.dev, theme: theme) }
             if items.isEmpty {
                 Text(theme.name("No providers yet. Log in to claude / codex / gemini, or add ~/.config/phosphor/providers.json"))
@@ -82,6 +100,7 @@ struct RootView: View {
                 }
                 if prefs.showChart { UsageChartView(logs: store.logs, theme: theme) }
             }
+            PanelIdentity(theme: theme)
         }
         .id(prefs.language)   // redraw burn-rate lines and menus when the language changes
         .modifier(Glow(theme: theme))
@@ -149,6 +168,36 @@ struct Header: View {
         guard let t = store.lastRefresh else { return "" }
         let m = Int(now.timeIntervalSince(t) / 60)
         return theme.name(m < 1 ? "live" : "\(m)m ago")
+    }
+}
+
+/// Quiet product mark at the bottom of the usage panel, so a screenshot names the app.
+/// The leading box is reserved for a logo image; Φ is the text stand-in until one exists.
+/// Color is each theme's `dim`, the same muted ink as secondary labels, so it stays
+/// legible on Clean, Retro, Matrix, Glasses, and Raid without a second palette.
+struct PanelIdentity: View {
+    let theme: Theme
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 5) {
+            Text("Φ")
+                .font(theme.font(11, .medium))
+                .foregroundStyle(theme.dim)
+                .frame(width: 14, height: 14)
+                .accessibilityHidden(true)
+            Text("Phosphor")
+                .font(theme.font(9, .medium))
+                .foregroundStyle(theme.dim)
+            Text(Phosphor.version)
+                .font(theme.font(9))
+                .foregroundStyle(theme.dim)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Phosphor.identity)
+        .help(Phosphor.identity)
     }
 }
 
@@ -1044,6 +1093,8 @@ struct StageWallpaper: View {
 struct UsageSparkline: View {
     let values: [Double]
     let tint: Color
+    var width: CGFloat = 52
+    var helpText: String? = nil
     var body: some View {
         let pts = SparklineSeries.normalize(values)
         Canvas { ctx, size in
@@ -1071,8 +1122,8 @@ struct UsageSparkline: View {
             ctx.fill(fill, with: .color(tint.opacity(0.22)))
             ctx.stroke(line, with: .color(tint.opacity(0.95)), lineWidth: 1.15)
         }
-        .frame(width: 52, height: 16)
-        .help(T.t("sparkline.help"))
+        .frame(width: width, height: 16)
+        .help(helpText ?? T.t("sparkline.help"))
         .accessibilityLabel(T.t("sparkline.access"))
     }
 }
