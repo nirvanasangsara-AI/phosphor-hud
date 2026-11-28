@@ -36,6 +36,8 @@ final class UsageStore: ObservableObject {
     let registry = ProviderRegistry.shared
     /// GitHub PRs / commits and the efficiency numbers built on them (off until turned on).
     let dev: DevStatsService
+    /// Reset-news ticker. Status RSS is the fallback when no worker URL is set.
+    let resetNews: ResetFeedService
     private var alertMemory = AlertMemory()
     private var bag = Set<AnyCancellable>()
     private static var alertMemoryFile: URL { Paths.support.appendingPathComponent("alerts-memory.json") }
@@ -50,9 +52,11 @@ final class UsageStore: ObservableObject {
         self.history = History(persist: !demo)
         self.logs = UsageLogs(load: !demo)
         self.dev = DevStatsService(demo: demo)
+        self.resetNews = ResetFeedService(demo: demo)
         if demo { logs.seedDemo(); accounts = DemoSource.accounts() }
         // Redraw rows when status dots or log totals change.
         status.objectWillChange.merge(with: registry.objectWillChange).merge(with: dev.objectWillChange)
+            .merge(with: resetNews.objectWillChange)
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &bag)
@@ -83,6 +87,7 @@ final class UsageStore: ObservableObject {
                 await registry.rescan()
                 refresh()
                 logs.refreshIfDue()
+                resetNews.refreshIfDue()
             }
         } else {
             refresh()
@@ -173,6 +178,7 @@ final class UsageStore: ObservableObject {
         logs.refreshIfDue()
         status.refreshIfDue(ids: visible.map(\.id))
         if Prefs.shared.showDevStats { dev.refreshIfDue() }
+        resetNews.refreshIfDue()
         refreshAccountsIfDue()
     }
 

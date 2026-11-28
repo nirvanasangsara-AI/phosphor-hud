@@ -26,7 +26,7 @@ Finder에서 Phosphor를 마우스 오른쪽 단추로 클릭하고 **열기**�
 
 macOS 15 이상에서는 시스템 설정 > 개인정보 보호 및 보안으로 가서 **그래도 열기**를 눌러도 됩니다.
 
-한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위와 사용량 패널 아래의 `Φ · Phosphor · 0.3.1`에서 설치한 버전을 확인할 수 있습니다. 이 브랜치의 `VERSION`은 0.3.1입니다.
+한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위와 사용량 패널 아래의 `Φ · Phosphor · 0.3.2`에서 설치한 버전을 확인할 수 있습니다. 이 브랜치의 `VERSION`은 0.3.2입니다.
 
 ---
 
@@ -50,7 +50,7 @@ In Finder, right-click Phosphor and choose **Open**. When the dialog appears, cl
 
 On macOS 15 and later you can also open System Settings, go to Privacy & Security, and click **Open Anyway**.
 
-After that first launch it opens normally. The top line of the menu and the bottom of the usage panel read `Φ · Phosphor · 0.3.1`. This branch's `VERSION` file is 0.3.1.
+After that first launch it opens normally. The top line of the menu and the bottom of the usage panel read `Φ · Phosphor · 0.3.2`. This branch's `VERSION` file is 0.3.2.
 
 ---
 
@@ -116,7 +116,7 @@ npm install
 npm run build
 ```
 
-`npm run build` reads the repo [`VERSION`](VERSION) file and stamps it on the installer and the window. On this branch the title and the tray menu say `Phosphor 0.3.1`. A new `VERSION` shows up on the next build.
+`npm run build` reads the repo [`VERSION`](VERSION) file and stamps it on the installer and the window. On this branch the title and the tray menu say `Phosphor 0.3.2`. A new `VERSION` shows up on the next build.
 
 The NSIS installer is under `windows/phosphor-hud/src-tauri/target/release/bundle/nsis/`. A portable `Phosphor.exe` is next to it in `target/release/`. GitHub Actions on `windows-latest` builds the same thing and uploads it as an artifact. Rust and Node are only needed if you build it yourself.
 
@@ -156,6 +156,45 @@ This is the first Windows cut. It has not been clicked through on a physical PC 
 - Alerts show inside the HUD. There is no Windows toast yet.
 - The window is translucent, but WebView2 does not match the Mac material, and some machines draw a thin light edge.
 
+## 0.3.2
+
+The menu bar icon is a small CRT. Its screen fills from the bottom with the highest tracked limit. It is drawn in colour, not as a template image, so the bezel stays visible on a light menu bar and on a dark one. The picture below is the same drawing at a few fill levels, on both backgrounds.
+
+<p align="center">
+  <img src="docs/assets/menu-icon-0.3.2.png" width="520" alt="Phosphor menu icon: a mini CRT whose screen fills from the bottom. Shown empty, under pace, on pace, and burning too fast, on light and dark bars."><br>
+  <sub>Empty, under pace (yellow), on pace (green), and burning too fast (red).</sub>
+</p>
+
+**Icon colour based on** is in the menu and is remembered.
+
+- **Pace** (the default). The aim is to use about all of a limit in the moment before it resets. Full use is good. Green means the projection at reset is about 85–110%. Yellow means it will finish under 85%, so quota would be left unused. Red means the projection is over 110%, or the burn rate hits the cap before reset. While Phosphor is still measuring a slope, it compares usage with how much of the window has already elapsed. The first 5% of a window stays neutral.
+- **Usage.** The colour is only the percent: green under 50%, yellow from 50% through 80%, red above 80%.
+
+The same colour is used on the list gauges for each limit. A window Phosphor cannot pace yet keeps the provider colour.
+
+The panel also has a one-line reset ticker at the top. It rotates one item about every 6 seconds, pauses when the pointer is over it, and opens the source when clicked. Official posts and status incidents come first. Unverified posts are dimmed and tagged **Rumor** / **루머**. **Show reset ticker** and **Include rumors** are on until you turn them off. **Reset feed URL…** takes a Worker address; leave it blank and Phosphor reads the OpenAI, Claude, and xAI status feeds itself.
+
+### Reset feed worker
+
+The Worker lives in [`worker/reset-feed`](worker/reset-feed). It does not ship inside the app. Deploy it yourself when you want posts as well as status incidents.
+
+```bash
+cd worker/reset-feed
+npm install
+npx wrangler kv namespace create RESET_FEED
+```
+
+Paste the printed namespace id into `wrangler.toml` in place of `REPLACE_WITH_KV_NAMESPACE_ID`. Then:
+
+```bash
+npx wrangler secret put X_BEARER_TOKEN
+npx wrangler deploy
+```
+
+`X_BEARER_TOKEN` is an X API v2 app-only bearer token. The Worker polls every 15 minutes: original posts from an allowlist (including @thsottiaux, @OpenAIDevs, @ClaudeDevs, @cursor_ai, @SpaceXSI, and @bot), a keyword search for other posts about resets and rate limits, and the three status RSS feeds. It does not follow @grok, @xai, or @OpenAIStatus. `GET /feed.json` serves the cache. Put that URL in **Reset feed URL…**.
+
+You need an X developer app (the bearer token) and a Cloudflare account (Workers and one KV namespace). Nothing here is deployed for you.
+
 ## Android
 
 The phone does not read Claude, Codex, or any other app. Turn on **Phone sync** on the Mac or Windows HUD (it is off until you do) and the Android app shows that snapshot in a home-screen widget. Pairing is a QR code on the same Wi-Fi. There is no account. Details and the trade-offs are in [docs/android.md](docs/android.md).
@@ -168,7 +207,7 @@ The phone does not read Claude, Codex, or any other app. Turn on **Phone sync** 
 - **Local logs are read for numbers only.** Token counts and model names, never prompts or replies. Everything stays on your Mac,
   in `~/Library/Application Support/Phosphor`.
 - **The only network calls** go to the providers' usage endpoints, their public status pages, LiteLLM's public price table,
-  a public FX rate (for ROI), GitHub search through your `gh` login, and provider icons if you choose to download them. No analytics, no telemetry.
+  a public FX rate (for ROI), GitHub search through your `gh` login, the optional reset-news feed (or the public status RSS feeds when that URL is blank), and provider icons if you choose to download them. No analytics, no telemetry.
 - **No guessed numbers.** If a value can't be read, the row says why instead of making one up.
 
 ## Documentation
@@ -194,11 +233,11 @@ cd phosphor-hud
 
 로그인 없이 화면만 보려면 `dist/Phosphor.app/Contents/MacOS/Phosphor --demo`를 실행합니다. 이 데모에는 실제 계정 데이터가 없습니다.
 
-버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴와 사용량 패널에는 `Phosphor 0.3.1`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.3.1`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
+버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴와 사용량 패널에는 `Phosphor 0.3.2`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.3.2`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
 
 ## Developers
 
-The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build of this branch shows `Phosphor 0.3.1` in the menu and on the usage panel. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.3.1`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
+The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build of this branch shows `Phosphor 0.3.2` in the menu and on the usage panel. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.3.2`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
 
 ## 한국어
 

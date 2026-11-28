@@ -1,0 +1,13 @@
+name = "phosphor-reset-feed"
+main = "src/index.ts"
+compatibility_date = "2026-11-28"
+
+# Every 15 minutes. The scheduled handler refreshes KV; GET /feed.json serves that cache.
+[triggers]
+crons = ["*/15 * * * *"]
+
+# Create the namespace, then paste its id here:
+#   npx wrangler kv namespace create RESET_FEED
+[[kv_namespaces]]
+binding = "RESET_FEED"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

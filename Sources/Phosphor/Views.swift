@@ -55,6 +55,9 @@ struct RootView: View {
     private func panel(_ theme: Theme, now: Date) -> some View {
         let items = store.visible
         VStack(alignment: .leading, spacing: prefs.compact ? 6 : 10) {
+            if prefs.showResetTicker {
+                ResetTickerBar(feed: store.resetNews, theme: theme)
+            }
             Header(theme: theme, store: store, now: now, count: items.count)
             if !store.logs.pricesReady {
                 Button { store.logs.refreshPrices() } label: {
@@ -227,6 +230,7 @@ struct ProviderRow: View {
     /// Token totals from local session logs, for the hover card.
     var logged: String? = nil
     @StateObject private var hover = HoverState()
+    @ObservedObject private var prefs = Prefs.shared
 
     var body: some View {
         Group {
@@ -390,7 +394,14 @@ struct ProviderRow: View {
     }
 
     private func color(for w: UsageWindow) -> Color {
-        w.usedPercent >= 90 ? theme.danger : theme.tint(snap.info)
+        guard w.gauged else { return theme.tint(snap.info) }
+        let mode = IconColor.Mode(rawValue: prefs.iconColorMode) ?? .pace
+        let band = IconColor.band(mode: mode, usedPercent: w.usedPercent,
+                                  elapsedFraction: w.pacePercent.map { $0 / 100 }, forecast: w.forecast)
+        guard band != .neutral else {
+            return w.usedPercent >= 90 ? theme.danger : theme.tint(snap.info)
+        }
+        return Color(nsColor: CRTIcon.swatch(band))
     }
 }
 

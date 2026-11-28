@@ -13,3 +13,5 @@ android/build/
 android/app/build/
 android/local.properties
 *.apk
+worker/reset-feed/node_modules/
+worker/reset-feed/.wrangler/

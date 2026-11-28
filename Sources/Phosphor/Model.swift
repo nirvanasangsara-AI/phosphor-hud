@@ -369,6 +369,14 @@ final class Prefs: ObservableObject {
     @Published var devAccount: String { didSet { d.set(devAccount, forKey: "devAccount") } }
     /// Extra folders to scan for local git repos. Empty uses Projects, Developer, code, src, and workspace.
     @Published var localRepoRoots: [String] { didSet { d.set(localRepoRoots, forKey: "localRepoRoots") } }
+    /// Rotating reset-news strip. On until the user hides it.
+    @Published var showResetTicker: Bool { didSet { d.set(showResetTicker, forKey: "showResetTicker") } }
+    /// Unverified posts. On until the user hides them. Official items stay either way.
+    @Published var includeRumors: Bool { didSet { d.set(includeRumors, forKey: "includeRumors") } }
+    /// Worker `/feed.json`. Empty uses the public status RSS feeds.
+    @Published var resetFeedURL: String { didSet { d.set(resetFeedURL, forKey: "resetFeedURL") } }
+    /// `pace` or `usage`. Pace is the default: filling the quota just before reset is the goal.
+    @Published var iconColorMode: String { didSet { d.set(iconColorMode, forKey: "iconColorMode") } }
 
     var appLanguage: AppLanguage { AppLanguage(rawValue: language) ?? .english }
 
@@ -394,6 +402,10 @@ final class Prefs: ObservableObject {
         language = d.string(forKey: "language") ?? AppLanguage.english.rawValue
         devAccount = d.string(forKey: "devAccount") ?? ""
         localRepoRoots = d.stringArray(forKey: "localRepoRoots") ?? []
+        showResetTicker = d.object(forKey: "showResetTicker") as? Bool ?? true
+        includeRumors = d.object(forKey: "includeRumors") as? Bool ?? true
+        resetFeedURL = d.string(forKey: "resetFeedURL") ?? ""
+        iconColorMode = d.string(forKey: "iconColorMode") ?? IconColor.Mode.pace.rawValue
     }
 
     func hideProvider(_ id: String) {

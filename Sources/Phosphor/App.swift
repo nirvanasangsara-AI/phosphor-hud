@@ -154,13 +154,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyPrefs()
         panel.orderFrontRegardless()
 
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-        statusItem.button?.title = "Φ"
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.button?.imagePosition = .imageOnly
+        statusItem.button?.image = CRTIcon.image(fill: 0, band: .neutral)
         statusItem.menu = makeMenu()
 
         store.$snapshots.receive(on: RunLoop.main).sink { [weak self] snaps in
-            self?.updateStatusTitle(snaps)
+            self?.updateStatusIcon(snaps)
             guard let self, self.prefs.phoneSync else { return }
             PhoneSyncService.shared.replaceSnapshot(phoneSnapshot(snaps, host: PhoneSyncService.shared.hostName))
             PhoneSyncPanel.shared.noteSnapshots()
@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyPrefs() {
         panel.alphaValue = prefs.opacity
         updateMouseThrough()
+        if statusItem != nil { updateStatusIcon(store.snapshots) }
         // Click-through: holding ⌥ makes the HUD grabbable again (drag / right-click).
         // NSEvent.modifierFlags needs no Accessibility permission, so poll it while the mode is on.
         optionPoll?.invalidate()
@@ -277,10 +278,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if panel.ignoresMouseEvents != through { panel.ignoresMouseEvents = through }
     }
 
-    private func updateStatusTitle(_ snaps: [ProviderSnapshot]) {
-        let hot = snaps.filter { !prefs.hidden.contains($0.id) && !$0.windows.isEmpty }.map(\.maxUsed).max()
-        statusItem.button?.title = hot.map { "Φ \(Int($0.rounded()))%" } ?? "Φ"
+    private func updateStatusIcon(_ snaps: [ProviderSnapshot]) {
+        let gauges = snaps.filter { !prefs.hidden.contains($0.id) }.flatMap { snap in
+            snap.gauges.map { (snap: snap, window: $0) }
+        }
+        let primary = gauges.max { $0.window.usedPercent < $1.window.usedPercent }
+        let fill = (primary?.window.usedPercent ?? 0) / 100
+        let mode = IconColor.Mode(rawValue: prefs.iconColorMode) ?? .pace
+        let band: IconColor.Band
+        if let window = primary?.window {
+            band = IconColor.band(mode: mode, usedPercent: window.usedPercent,
+                                  elapsedFraction: window.pacePercent.map { $0 / 100 },
+                                  forecast: window.forecast)
+        } else {
+            band = .neutral
+        }
+        let key = "\(Int((fill * 100).rounded()))-\(band.rawValue)-\(mode.rawValue)"
+        if key != iconKey {
+            iconKey = key
+            statusItem.button?.image = CRTIcon.image(fill: fill, band: band)
+        }
+        if let window = primary?.window {
+            statusItem.button?.toolTip = "\(Int(window.usedPercent.rounded()))% · \(mode.rawValue)"
+        } else {
+            statusItem.button?.toolTip = "Phosphor"
+        }
     }
+
+    private var iconKey = ""
 
     // MARK: Menu (shared by the menu bar item and right-click on the HUD)
 
@@ -468,6 +493,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let phone = item(T.t("menu.phoneSync"), #selector(showPhoneSync))
         phone.state = prefs.phoneSync ? .on : .off
         menu.addItem(phone)
+        let ticker = item(T.t("menu.showResetTicker"), #selector(toggleResetTicker))
+        ticker.state = prefs.showResetTicker ? .on : .off
+        menu.addItem(ticker)
+        let rumors = item(T.t("menu.includeRumors"), #selector(toggleRumors))
+        rumors.state = prefs.includeRumors ? .on : .off
+        menu.addItem(rumors)
+        menu.addItem(item(T.t("menu.resetFeedURL"), #selector(editResetFeedURL)))
+        let colours = NSMenu()
+        for (title, mode) in [(T.t("menu.iconPace"), IconColor.Mode.pace.rawValue),
+                              (T.t("menu.iconUsage"), IconColor.Mode.usage.rawValue)] {
+            let i = item(title, #selector(pickIconColor(_:)))
+            i.representedObject = mode
+            i.state = prefs.iconColorMode == mode ? .on : .off
+            colours.addItem(i)
+        }
+        menu.addItem(submenu(T.t("menu.iconColor"), colours))
         if prefs.showDevStats, store.dev.counts != nil {
             menu.addItem(item(T.t("menu.saveReceipt"), #selector(saveReceipt)))
         }
@@ -571,12 +612,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func toggleProvider(_ s: NSMenuItem) {
         guard let id = s.representedObject as? String else { return }
         if prefs.hidden.contains(id) { prefs.hidden.remove(id) } else { prefs.hidden.insert(id) }
-        updateStatusTitle(store.snapshots)
+        updateStatusIcon(store.snapshots)
     }
     @objc private func hideProvider(_ s: NSMenuItem) {
         guard let id = s.representedObject as? String else { return }
         prefs.hidden = ProviderVisibility.hiding(id, in: prefs.hidden)
-        updateStatusTitle(store.snapshots)
+        updateStatusIcon(store.snapshots)
     }
     @objc private func resetWindowSize() {
         prefs.hudUserSized = false
@@ -663,6 +704,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func resetRepoRoots() {
         store.dev.useRepoRoots([])
+    }
+    @objc private func toggleResetTicker() {
+        prefs.showResetTicker.toggle()
+        if prefs.showResetTicker { store.resetNews.refreshIfDue(force: true) }
+    }
+    @objc private func toggleRumors() { prefs.includeRumors.toggle() }
+    @objc private func editResetFeedURL() {
+        let alert = NSAlert()
+        alert.messageText = T.t("menu.resetFeedTitle")
+        alert.informativeText = T.t("menu.resetFeedHelp")
+        alert.addButton(withTitle: T.t("menu.githubSave"))
+        alert.addButton(withTitle: T.t("menu.githubCancel"))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.stringValue = prefs.resetFeedURL
+        field.placeholderString = ResetFeed.feedURLPlaceholder
+        alert.accessoryView = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        prefs.resetFeedURL = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        store.resetNews.refreshIfDue(force: true)
+    }
+    @objc private func pickIconColor(_ sender: NSMenuItem) {
+        guard let mode = sender.representedObject as? String else { return }
+        prefs.iconColorMode = mode
+        updateStatusIcon(store.snapshots)
     }
     @objc private func showPhoneSync() { PhoneSyncPanel.shared.show(store: store) }
     @objc private func toggleChart() { prefs.showChart.toggle(); if prefs.showChart { store.logs.refreshIfDue() } }
