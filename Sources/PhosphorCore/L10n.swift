@@ -56,6 +56,19 @@ public enum L10n {
         clock(date, now: now, resolved: language.resolve(preferredLanguages: preferredLanguages))
     }
 
+    public static func ago(_ date: Date, now: Date = Date(), language: AppLanguage,
+                           preferredLanguages: [String] = Locale.preferredLanguages) -> String {
+        ago(date, now: now, resolved: language.resolve(preferredLanguages: preferredLanguages))
+    }
+
+    public static func ago(_ date: Date, now: Date = Date(), resolved: ResolvedLanguage) -> String {
+        let seconds = max(0, Int(now.timeIntervalSince(date)))
+        if seconds < 45 { return text("ticker.now", resolved: resolved) }
+        if seconds < 3600 { return text("ticker.minutes", resolved: resolved, ["\(max(1, seconds / 60))"]) }
+        if seconds < 86_400 { return text("ticker.hours", resolved: resolved, ["\(max(1, seconds / 3600))"]) }
+        return text("ticker.days", resolved: resolved, ["\(max(1, seconds / 86_400))"])
+    }
+
     public static func clock(_ date: Date, now: Date = Date(), resolved: ResolvedLanguage) -> String {
         let f = DateFormatter()
         f.locale = resolved.locale
@@ -232,6 +245,21 @@ private let en: [String: String] = [
     "menu.providers": "Providers",
     "menu.chart": "Usage chart (local logs)",
     "menu.devStats": "GitHub PRs & efficiency (gh, read-only)",
+    "menu.showResetTicker": "Show reset ticker",
+    "menu.includeRumors": "Include rumors",
+    "menu.resetFeedURL": "Reset feed URL…",
+    "menu.resetFeedTitle": "Reset feed URL",
+    "menu.resetFeedHelp": "Leave blank to use the public status feeds. Paste a Cloudflare Worker /feed.json URL for posts and rumors.",
+    "menu.iconColor": "Icon colour based on",
+    "menu.iconPace": "Pace (fill the quota by reset)",
+    "menu.iconUsage": "Usage percent",
+    "ticker.rumor": "Rumor",
+    "ticker.help": "Usage-limit reset news. Click to open the source.",
+    "ticker.now": "now",
+    "ticker.minutes": "{0}m",
+    "ticker.hours": "{0}h",
+    "ticker.days": "{0}d",
+    "ticker.until": "until {0}",
     "menu.phoneSync": "Phone sync (same Wi-Fi)…",
     "phone.title": "Phone sync",
     "phone.enable": "Share on this Wi-Fi",
@@ -357,6 +385,21 @@ private let ko: [String: String] = [
     "menu.providers": "서비스",
     "menu.chart": "사용량 차트 (로컬 로그)",
     "menu.devStats": "GitHub PR·효율 (gh, 읽기 전용)",
+    "menu.showResetTicker": "리셋 소식 표시",
+    "menu.includeRumors": "루머 포함",
+    "menu.resetFeedURL": "리셋 피드 주소…",
+    "menu.resetFeedTitle": "리셋 피드 주소",
+    "menu.resetFeedHelp": "비워 두면 공개 상태 피드를 씁니다. 글과 루머는 Cloudflare Worker의 /feed.json 주소를 붙입니다.",
+    "menu.iconColor": "아이콘 색 기준",
+    "menu.iconPace": "페이스 (리셋 직전에 한도를 채움)",
+    "menu.iconUsage": "사용량 %",
+    "ticker.rumor": "루머",
+    "ticker.help": "사용량 한도 리셋 소식. 클릭하면 출처가 열립니다.",
+    "ticker.now": "방금",
+    "ticker.minutes": "{0}분",
+    "ticker.hours": "{0}시간",
+    "ticker.days": "{0}일",
+    "ticker.until": "{0} 후",
     "menu.phoneSync": "폰 동기화 (같은 Wi-Fi)…",
     "phone.title": "폰 동기화",
     "phone.enable": "이 Wi-Fi에서 공유",

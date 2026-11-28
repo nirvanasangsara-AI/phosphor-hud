@@ -14,6 +14,10 @@ enum T {
         L10n.clock(date, now: now, language: language)
     }
 
+    static func ago(_ date: Date, now: Date = Date()) -> String {
+        L10n.ago(date, now: now, language: language)
+    }
+
     static func countdown(to date: Date?, now: Date = Date()) -> String {
         L10n.countdown(to: date, now: now, language: language)
     }
