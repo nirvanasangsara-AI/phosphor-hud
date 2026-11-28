@@ -70,7 +70,9 @@ struct DevStatsView: View {
             }
             if let hit = rankHit(c) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(theme.name(T.t("dev.rank", "\(hit.topPercentLow)", "\(hit.topPercentHigh)")))
+                    Text(theme.name(T.t("dev.rank",
+                                       PRRankTable.percentText(hit.topPercentLow),
+                                       PRRankTable.percentText(hit.topPercentHigh))))
                         .font(theme.font(15, .semibold))
                         .foregroundStyle(theme.fg)
                         .lineLimit(1)

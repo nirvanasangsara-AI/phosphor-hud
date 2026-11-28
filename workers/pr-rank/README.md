@@ -2,7 +2,7 @@
 
 This worker builds `GET /rank.json` for Phosphor's individual rank line. It is not deployed by CI.
 
-The app ships `snapshot/rank.json` until this worker has a URL. That snapshot is the 2026-11-28 analysis only: 11 public pull requests opened in 7 days is the top 10–20%, and the top 5% is 22–41 public pull requests per week. Counts outside that published point are not given a rank.
+The app ships `snapshot/rank.json`, built by `node src/snapshot.mjs` from the 2026-11-28 fits. Every public count from 1 to 1000 has a rank. The weekly cron replaces that file in KV when a fresh sample is large enough to fit. Until the worker URL is set, Phosphor shows the snapshot.
 
 ## What a run does
 

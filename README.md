@@ -174,9 +174,9 @@ The pin on the header is filled and labelled **고정** while it is holding the 
 
 The PR strip is two lines. The bright line is today against the 30-day daily average (`today 7 · 2.5× avg`). The next line is `30d 83 · 2.8/day · ~19/wk`. Merged counts on those lines include private pull requests and are only the user's own numbers.
 
-The rank line uses public pull requests opened in the last 7 days. With the shipped table, 11 of those reads **개인 상위 10–20%**, as bright as the today count. Beside it, dimmed: **다음 5% · 22–41/주**, and the date `2026-11-28`. Any other count hides the rank line. A configured rank URL that fails also hides it. An empty URL shows this snapshot. There is no week-over-week arrow on the rank.
+The rank line uses public pull requests opened in the last 7 days. The shipped table is the six fitted curves from the 2026-11-28 GH Archive sample (bots excluded, three 1% thinning calibrations). Eleven public pull requests is a top share of 9.3–21.7%, shown as **개인 상위 9–22%**. Twenty is about 5.3–12.4%, shown as **5–12%**. Twenty-five is **4–10%**. The dim next-tier line is where those fits first reach a top share of 5%: **다음 5% · 22–47/주**. Zero public pull requests hides the line. Counts above 1,000 stay on the 1,000 row. A configured rank URL that fails also hides the line. An empty URL shows this snapshot. There is no week-over-week arrow.
 
-No fuller individual-author percentile for GitHub was published in a form that can be cited. The worker in [`workers/pr-rank`](workers/pr-rank) can replace the snapshot. CI does not deploy it. GitHub search totals cap at 1,000, so the worker scales a 1% hour sample by the hours it read, and fits a lognormal and a power law. A short sample does not publish a table.
+The worker in [`workers/pr-rank`](workers/pr-rank) is the live source and replaces the snapshot after it publishes. CI does not deploy it. Regenerate the snapshot with `node workers/pr-rank/src/snapshot.mjs`.
 
 The Elite chip is a thin outline. The outline still shimmers on the same period as before. The help text marks it **팀 기준**: LinearB's team rate, not a personal rank. A per-person fleet comparison is omitted. Public notes on Grok Bot give how many people landed a PR, not a headcount.
 
