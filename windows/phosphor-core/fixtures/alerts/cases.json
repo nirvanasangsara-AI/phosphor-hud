@@ -1,0 +1,88 @@
+{
+  "now": "2026-11-26T03:00:00Z",
+  "tzOffsetSecs": 0,
+  "cases": [
+    {
+      "name": "warnThenCriticalOncePerCycle",
+      "settings": {},
+      "steps": [
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 50, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": [], "titles": []},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 72, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": ["warning"], "titles": ["Claude Code 5H at 72%"]},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 75, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": [], "titles": []},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 91, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": ["critical"], "titles": ["Claude Code 5H at 91%"]},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 95, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": [], "titles": []}
+      ]
+    },
+    {
+      "name": "jumpStraightToCriticalSkipsWarning",
+      "settings": {},
+      "steps": [
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 93, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": ["critical"], "titles": ["Claude Code 5H at 93%"]},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 93, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": [], "titles": []}
+      ]
+    },
+    {
+      "name": "thresholdsAndSwitchesAreConfigurable",
+      "settings": {"warnAt": 50, "criticalEnabled": false},
+      "steps": [
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 95, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": ["warning"], "titles": ["Claude Code 5H at 95%"]}
+      ]
+    },
+    {
+      "name": "resetDetected",
+      "settings": {},
+      "steps": [
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 80, "resetsAt": "2026-11-26T02:59:00Z"}], "bills": [], "kinds": ["warning"], "titles": ["Claude Code 5H at 80%"]},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 2, "resetsAt": "2026-11-26T08:00:00Z"}], "bills": [], "kinds": ["reset"], "titles": ["Claude Code 5H reset"]}
+      ]
+    },
+    {
+      "name": "smallResetStaysQuiet",
+      "settings": {},
+      "steps": [
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 20, "resetsAt": "2026-11-26T02:59:00Z"}], "bills": [], "kinds": [], "titles": []},
+        {"quotas": [{"provider": "claude", "providerName": "Claude Code", "window": "5H", "used": 0, "resetsAt": "2026-11-26T05:00:00Z"}], "bills": [], "kinds": [], "titles": []}
+      ]
+    },
+    {
+      "name": "billAndCreditLeadTimes",
+      "settings": {},
+      "steps": [
+        {
+          "quotas": [],
+          "bills": [
+            {
+              "provider": "claude",
+              "providerName": "Claude",
+              "nextBill": "2026-11-27T01:00:00Z",
+              "price": "$30",
+              "credits": [
+                {"title": "Limit reset", "amount": "×2", "expires": "2026-11-28T03:00:00Z"},
+                {"title": "Far", "amount": null, "expires": "2026-12-26T03:00:00Z"}
+              ]
+            },
+            {"provider": "grok", "providerName": "Grok", "nextBill": "2026-12-01T03:00:00Z", "price": null, "credits": []}
+          ],
+          "kinds": ["bill", "creditExpiry"],
+          "titles": ["Claude bills tomorrow", "Claude: Limit reset ×2 expires in 2 days"]
+        },
+        {
+          "quotas": [],
+          "bills": [
+            {
+              "provider": "claude",
+              "providerName": "Claude",
+              "nextBill": "2026-11-27T01:00:00Z",
+              "price": "$30",
+              "credits": [
+                {"title": "Limit reset", "amount": "×2", "expires": "2026-11-28T03:00:00Z"}
+              ]
+            }
+          ],
+          "kinds": [],
+          "titles": []
+        }
+      ]
+    }
+  ]
+}

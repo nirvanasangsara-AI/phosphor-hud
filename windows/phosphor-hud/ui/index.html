@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Phosphor</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="panel">
+    <header>
+      <div class="brand" data-tauri-drag-region>
+        <span class="phi">Φ</span>
+        <span class="name">Phosphor</span>
+        <span id="peak" class="peak"></span>
+      </div>
+      <div class="actions">
+        <button id="refresh" type="button" title="Refresh">Refresh</button>
+        <button id="hide" type="button" title="Hide">Hide</button>
+      </div>
+    </header>
+    <div id="alerts" class="alerts" hidden></div>
+    <main id="rows"></main>
+    <div id="phone-card" class="phone" hidden></div>
+    <footer id="foot"></footer>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

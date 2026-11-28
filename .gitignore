@@ -4,3 +4,12 @@ dist/
 *.xcodeproj
 DerivedData/
 .DS_Store
+windows/phosphor-hud/node_modules/
+windows/phosphor-hud/src-tauri/target/
+windows/phosphor-hud/src-tauri/gen/
+windows/phosphor-core/target/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.apk

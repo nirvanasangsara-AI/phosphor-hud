@@ -1,0 +1,180 @@
+[
+  {
+    "name": "twoSamplesTenMinutesApartYieldARate",
+    "now": 1700000000,
+    "usedPercent": 24,
+    "resetsAt": 1700604800,
+    "windowSeconds": 604800,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699999400, "u": 23, "r": 1700604800},
+      {"t": 1700000000, "u": 24, "r": 1700604800}
+    ],
+    "expect": {"kind": "rate", "ratePerHour": 6, "warnsBeforeReset": true, "atReset": 100, "hasHitsLimitAt": true}
+  },
+  {
+    "name": "twoSamplesAtMinSpanAreEnough",
+    "now": 1700000000,
+    "usedPercent": 10.5,
+    "resetsAt": 1700010800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699999700, "u": 10, "r": 1700010800},
+      {"t": 1700000000, "u": 10.5, "r": 1700010800}
+    ],
+    "expect": {"kind": "rate", "ratePerHour": 6}
+  },
+  {
+    "name": "spanShorterThanFiveMinutesStaysMeasuring",
+    "now": 1700000000,
+    "usedPercent": 11,
+    "resetsAt": 1700010800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699999760, "u": 10, "r": 1700010800},
+      {"t": 1700000000, "u": 11, "r": 1700010800}
+    ],
+    "expect": {"kind": "measuring", "ratePerHour": 0, "warnsBeforeReset": false, "atReset": 11}
+  },
+  {
+    "name": "singleSampleIsMeasuring",
+    "now": 1700000000,
+    "usedPercent": 23,
+    "resetsAt": 1700010800,
+    "windowSeconds": 604800,
+    "activeSession": true,
+    "samples": [{"t": 1700000000, "u": 23, "r": 1700010800}],
+    "expect": {"kind": "measuring", "ratePerHour": 0, "atReset": 23}
+  },
+  {
+    "name": "noSamplesYetIsMeasuring",
+    "now": 1700000000,
+    "usedPercent": 40,
+    "resetsAt": 1700010800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [],
+    "expect": {"kind": "measuring", "ratePerHour": 0}
+  },
+  {
+    "name": "dropClearsEarlierPointsThenFitsTheNewCycle",
+    "now": 1700000000,
+    "usedPercent": 24,
+    "resetsAt": 1700010800,
+    "windowSeconds": 604800,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699997600, "u": 72, "r": 1700010800},
+      {"t": 1699998800, "u": 72, "r": 1700010800},
+      {"t": 1699999400, "u": 23, "r": 1700010800},
+      {"t": 1700000000, "u": 24, "r": 1700010800}
+    ],
+    "expect": {"kind": "rate", "ratePerHour": 6}
+  },
+  {
+    "name": "dropWithOnlyOneNewSampleIsMeasuring",
+    "now": 1700000000,
+    "usedPercent": 23,
+    "resetsAt": 1700010800,
+    "windowSeconds": 604800,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699998800, "u": 72, "r": 1700010800},
+      {"t": 1700000000, "u": 23, "r": 1700010800}
+    ],
+    "expect": {"kind": "measuring", "atReset": 23}
+  },
+  {
+    "name": "idleSlopeIsSteadyAtCurrentUsage",
+    "now": 1700000000,
+    "usedPercent": 50.1,
+    "resetsAt": 1700010800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699997600, "u": 50, "r": 1700010800},
+      {"t": 1699998800, "u": 50.05, "r": 1700010800},
+      {"t": 1700000000, "u": 50.1, "r": 1700010800}
+    ],
+    "expect": {"kind": "steady", "ratePerHour": 0, "atReset": 50.1, "warnsBeforeReset": false}
+  },
+  {
+    "name": "flatZeroUsageIsSteady",
+    "now": 1700000000,
+    "usedPercent": 0,
+    "resetsAt": 1700010800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699996400, "u": 0, "r": 1700010800},
+      {"t": 1699997000, "u": 0, "r": 1700010800},
+      {"t": 1699997600, "u": 0, "r": 1700010800},
+      {"t": 1699998200, "u": 0, "r": 1700010800},
+      {"t": 1699998800, "u": 0, "r": 1700010800},
+      {"t": 1699999400, "u": 0, "r": 1700010800},
+      {"t": 1700000000, "u": 0, "r": 1700010800}
+    ],
+    "expect": {"kind": "steady", "ratePerHour": 0}
+  },
+  {
+    "name": "atCapIsLimitReachedEvenWithNoSamples",
+    "now": 1700000000,
+    "usedPercent": 100,
+    "resetsAt": 1700010800,
+    "windowSeconds": 604800,
+    "activeSession": true,
+    "samples": [],
+    "expect": {"kind": "limitReached", "atReset": 100, "hitsLimitAt": 1700000000, "warnsBeforeReset": false}
+  },
+  {
+    "name": "overCapIsLimitReached",
+    "now": 1700000000,
+    "usedPercent": 100.4,
+    "resetsAt": 1700010800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [{"t": 1700000000, "u": 100.4, "r": 1700010800}],
+    "expect": {"kind": "limitReached"}
+  },
+  {
+    "name": "inactiveSessionIsNoSessionEvenWithSamples",
+    "now": 1700000000,
+    "usedPercent": 0,
+    "resetsAt": null,
+    "windowSeconds": 18000,
+    "activeSession": false,
+    "samples": [
+      {"t": 1699999400, "u": 0, "r": null},
+      {"t": 1700000000, "u": 0, "r": null}
+    ],
+    "expect": {"kind": "noSession", "ratePerHour": 0, "hasHitsLimitAt": false}
+  },
+  {
+    "name": "rateThatFitsBeforeResetWarns",
+    "now": 1700000000,
+    "usedPercent": 50,
+    "resetsAt": 1700028800,
+    "windowSeconds": 18000,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699996400, "u": 40, "r": 1700028800},
+      {"t": 1700000000, "u": 50, "r": 1700028800}
+    ],
+    "expect": {"kind": "rate", "ratePerHour": 10, "warnsBeforeReset": true, "atReset": 100}
+  },
+  {
+    "name": "rateThatFitsAfterResetShowsProjectedUsage",
+    "now": 1700000000,
+    "usedPercent": 50,
+    "resetsAt": 1700010800,
+    "windowSeconds": 604800,
+    "activeSession": true,
+    "samples": [
+      {"t": 1699996400, "u": 48, "r": 1700010800},
+      {"t": 1700000000, "u": 50, "r": 1700010800}
+    ],
+    "expect": {"kind": "rate", "ratePerHour": 2, "warnsBeforeReset": false, "atReset": 56}
+  }
+]

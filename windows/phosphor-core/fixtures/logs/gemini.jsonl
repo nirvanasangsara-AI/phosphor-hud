@@ -1,0 +1,2 @@
+{"id":"g1","timestamp":"2026-11-25T03:00:00Z","type":"gemini","model":"gemini-3-pro","tokens":{"input":1000,"output":100,"cached":600,"thoughts":50,"tool":0,"total":1150}}
+{"id":"u","timestamp":"2026-11-25T03:00:00Z","type":"user","content":"a prompt that must be ignored"}

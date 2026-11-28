@@ -1,0 +1,21 @@
+{
+  "identifier": "default",
+  "description": "Phosphor HUD",
+  "windows": ["hud"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "allow-app-version",
+    "allow-hud-state",
+    "allow-hide-hud",
+    "allow-show-hud",
+    "allow-set-demo",
+    "allow-set-show-dev",
+    "allow-phone-sync-state",
+    "allow-set-phone-sync",
+    "allow-rotate-phone-code"
+  ]
+}

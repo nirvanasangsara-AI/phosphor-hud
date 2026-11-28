@@ -1,0 +1,16 @@
+[package]
+name = "phosphor-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Windows port of Phosphor's usage math (forecast, alerts, log parsers, pricing)"
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+getrandom = "0.2"

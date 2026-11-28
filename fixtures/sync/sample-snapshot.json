@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "generatedAt": "2026-11-28T12:00:00Z",
+  "hostName": "Demo",
+  "rows": [
+    {
+      "id": "claude",
+      "name": "Claude Code",
+      "monogram": "C",
+      "color": "#D97757",
+      "plan": "Max",
+      "status": "ok",
+      "windows": [
+        {
+          "label": "5H",
+          "usedPercent": 62,
+          "kind": "quota",
+          "resetsIn": "1h 40m",
+          "forecastText": "measuring pace",
+          "warns": false
+        }
+      ]
+    },
+    {
+      "id": "codex",
+      "name": "Codex",
+      "monogram": "Cx",
+      "color": "#10A37F",
+      "plan": "Pro",
+      "status": "ok",
+      "windows": [
+        {
+          "label": "7D",
+          "usedPercent": 18,
+          "kind": "quota",
+          "resetsIn": "3d 2h",
+          "forecastText": "steady · ≈ 18% at reset",
+          "warns": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Phosphor</string>
+    <string name="widget_name">Phosphor</string>
+    <string name="widget_desc">컴퓨터의 AI 코딩 사용량</string>
+    <string name="pair_title">컴퓨터와 연결</string>
+    <string name="pair_body">맥이나 Windows 앱에서 폰 동기화를 켭니다. 켜기 전에는 동작하지 않습니다. QR을 찍거나 주소와 6자리 코드를 입력하세요. 두 기기는 같은 Wi-Fi에 있어야 합니다.</string>
+    <string name="host">주소</string>
+    <string name="port">포트</string>
+    <string name="code">코드</string>
+    <string name="pair">연결</string>
+    <string name="scan">QR 스캔</string>
+    <string name="refresh">새로고침</string>
+    <string name="unpair">이 컴퓨터 잊기</string>
+    <string name="demo">데모 데이터</string>
+    <string name="demo_note">데모 숫자입니다. 실제 계정이 아닙니다.</string>
+    <string name="language">언어</string>
+    <string name="lang_system">시스템</string>
+    <string name="lang_en">English</string>
+    <string name="lang_ko">한국어</string>
+    <string name="theme">모양</string>
+    <string name="theme_clean">클린</string>
+    <string name="theme_matrix">매트릭스</string>
+    <string name="theme_retro">레트로</string>
+    <string name="empty">아직 사용량이 없습니다. 컴퓨터에서 Phosphor를 여세요.</string>
+    <string name="widget_pair">연결하려면 Phosphor를 여세요</string>
+    <string name="stale">마지막 갱신 %1$s</string>
+    <string name="error_pair">연결하지 못했습니다. 코드, 주소, 같은 Wi-Fi인지 확인하세요.</string>
+    <string name="unavailable">사용할 수 없음</string>
+</resources>

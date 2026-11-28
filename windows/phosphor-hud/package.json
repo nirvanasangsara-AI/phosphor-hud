@@ -1,0 +1,14 @@
+{
+  "name": "phosphor-hud",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Phosphor Windows HUD",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "node apply-version.js dev",
+    "build": "node apply-version.js build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

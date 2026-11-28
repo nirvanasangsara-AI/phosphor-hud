@@ -1,0 +1,27 @@
+[package]
+name = "phosphor-hud"
+version = "0.1.0"
+edition = "2021"
+description = "Phosphor Windows HUD"
+license = "MIT"
+publish = false
+
+[lib]
+name = "phosphor_hud_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "Phosphor"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+phosphor-core = { path = "../../phosphor-core" }
+qrcode = "0.14"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+ureq = { version = "2", default-features = true, features = ["json"] }
