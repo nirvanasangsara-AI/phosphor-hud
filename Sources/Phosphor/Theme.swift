@@ -42,7 +42,13 @@ struct Theme: Identifiable {
 }
 
 enum Phosphor {
-    static let version = "0.2"
+    /// Marketing version stamped into the app from the repo VERSION file.
+    /// `scripts/build-app.sh` writes it to CFBundleShortVersionString.
+    static var version: String {
+        let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? "dev" : trimmed
+    }
 }
 
 // MARK: - JSON schema

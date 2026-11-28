@@ -4,6 +4,10 @@
 #   UNIVERSAL=1 ./scripts/build-app.sh  # arm64 + x86_64 (needs full Xcode)
 #   ./scripts/build-app.sh --run      # build and launch
 #
+# The marketing version is the VERSION file at the repo root (CFBundleShortVersionString).
+# CFBundleVersion is the git commit count, or $BUILD_NUMBER when that is set.
+# The environment variable VERSION is ignored so a stale shell value cannot override the file.
+#
 # Signing prefers a stable identity so Keychain ACLs survive rebuilds:
 #   1. $PHOSPHOR_SIGN_IDENTITY, if set
 #   2. an existing Developer ID Application, Apple Development, or "Phosphor Local" identity
@@ -13,7 +17,26 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP=Phosphor
-VERSION="${VERSION:-0.2.0}"
+if [[ ! -f VERSION ]]; then
+  echo "error: VERSION file is missing (it is the app version)." >&2
+  exit 1
+fi
+VERSION="$(tr -d '[:space:]' < VERSION)"
+if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,3}$ ]]; then
+  echo "error: VERSION must look like 0.2.1, found: $VERSION" >&2
+  exit 1
+fi
+if [[ -n "${BUILD_NUMBER:-}" ]]; then
+  BUILD="$BUILD_NUMBER"
+elif git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  BUILD="$(git rev-list --count HEAD)"
+else
+  BUILD="0"
+fi
+if [[ ! "$BUILD" =~ ^[0-9]+$ ]]; then
+  echo "error: build number must be an integer, found: $BUILD" >&2
+  exit 1
+fi
 BUNDLE_ID="${BUNDLE_ID:-io.github.nirvanasangsara.phosphor}"
 LOCAL_IDENTITY="Phosphor Local"
 
@@ -41,7 +64,7 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
@@ -192,7 +215,7 @@ sign_app() {
 
 sign_app
 
-echo "✓ built $OUT"
+echo "✓ built $OUT ($VERSION, build $BUILD)"
 
 if [[ "${1:-}" == "--run" ]]; then
   pkill -x "$APP" 2>/dev/null || true
