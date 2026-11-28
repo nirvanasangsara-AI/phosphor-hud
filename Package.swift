@@ -24,5 +24,11 @@ let package = Package(
             path: "Tests/PhosphorCoreTests",
             swiftSettings: testFlags
         ),
+        .testTarget(
+            name: "PhosphorTests",
+            dependencies: ["Phosphor"],
+            path: "Tests/PhosphorTests",
+            swiftSettings: testFlags
+        ),
     ]
 )
