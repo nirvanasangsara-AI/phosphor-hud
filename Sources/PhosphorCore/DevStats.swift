@@ -15,6 +15,9 @@ public struct DevCounts: Codable, Sendable, Equatable {
     public var localRepos: Int?
     /// Folders actually searched for local repositories (display paths). Optional so older dev-stats.json still decodes.
     public var localRoots: [String]?
+    /// Public pull requests this account opened. Nil until that search has answered. Rank uses only these.
+    public var publicOpened7: Int?
+    public var publicOpened30: Int?
     /// Merged PRs in the previous 30 days (days 31–60). Nil until that query has answered.
     public var merged30Prev: Int?
     /// Merged PRs per day over the last 14 days, oldest first. Nil when the daily sample was incomplete.
@@ -53,6 +56,39 @@ public struct DevCounts: Codable, Sendable, Equatable {
     public func prSparkline() -> [Int] {
         if let daily = mergedDaily, daily.count >= 2 { return daily }
         return Array(mergedWeeks.prefix(4).reversed())
+    }
+
+    /// Daily and weekly rates over the last 30 days, and how today / this week compare with them.
+    /// `todayMultiple` and `weekMultiple` are nil when the 30-day count is zero.
+    public struct MergePace: Equatable, Sendable {
+        public var perDay: Double
+        public var perWeek: Double
+        public var todayMultiple: Double?
+        public var weekMultiple: Double?
+    }
+
+    public func mergePace() -> MergePace {
+        let perDay = Double(merged30) / 30.0
+        let perWeek = Double(merged30) * 7.0 / 30.0
+        return MergePace(
+            perDay: perDay,
+            perWeek: perWeek,
+            todayMultiple: perDay > 0 ? Double(mergedToday) / perDay : nil,
+            weekMultiple: perWeek > 0 ? Double(merged7) / perWeek : nil
+        )
+    }
+
+    public static func dayRate(_ value: Double) -> String {
+        String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    public static func weekRate(_ value: Double) -> String {
+        String(Int(value.rounded()))
+    }
+
+    /// "2.5×". One decimal, so 2.53 reads as 2.5.
+    public static func multiple(_ value: Double) -> String {
+        String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     /// "▲ 4 · 22%" or "▼ 3". Percent is omitted when the previous period was zero.
@@ -100,6 +136,8 @@ public enum GitHubQueries {
             .init(key: "merged7", endpoint: "search/issues", q: "\(pr) is:merged merged:>=\(day(ago(7)))"),
             .init(key: "merged30", endpoint: "search/issues", q: "\(pr) is:merged merged:>=\(day(ago(30)))"),
             .init(key: "merged30Prev", endpoint: "search/issues", q: "\(pr) is:merged merged:\(range(60, 31))"),
+            .init(key: "publicOpened7", endpoint: "search/issues", q: "\(pr) is:public created:>=\(day(ago(7)))"),
+            .init(key: "publicOpened30", endpoint: "search/issues", q: "\(pr) is:public created:>=\(day(ago(30)))"),
             .init(key: "openedToday", endpoint: "search/issues", q: "\(pr) created:>=\(t)"),
             .init(key: "opened7", endpoint: "search/issues", q: "\(pr) created:>=\(day(ago(7)))"),
             .init(key: "opened30", endpoint: "search/issues", q: "\(pr) created:>=\(day(ago(30)))"),
@@ -122,6 +160,8 @@ public enum GitHubQueries {
         c.mergedWeeks = [c.merged7] + (1...3).map { results["mergedW\($0)"] ?? 0 }
         c.commitWeeks = [c.commits7] + (1...3).map { results["commitsW\($0)"] ?? 0 }
         if let n = results["merged30Prev"] { c.merged30Prev = n }
+        if let n = results["publicOpened7"] { c.publicOpened7 = n }
+        if let n = results["publicOpened30"] { c.publicOpened30 = n }
         return c
     }
 

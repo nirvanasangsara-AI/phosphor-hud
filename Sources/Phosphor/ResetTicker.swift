@@ -23,7 +23,7 @@ final class ResetFeedService: ObservableObject {
 
     func refreshIfDue(force: Bool = false) {
         guard !demo, Prefs.shared.showResetTicker else { return }
-        guard force || last.map { Date().timeIntervalSince($0) >= ResetFeed.refreshInterval } ?? true else { return }
+        guard force || (last.map { Date().timeIntervalSince($0) >= ResetFeed.refreshInterval } ?? true) else { return }
         last = Date()
         task?.cancel()
         task = Task { await load() }

@@ -5,8 +5,12 @@ import Foundation
 struct FakeProbe: FileProbe {
     var files: Set<String> = []
     var executables: Set<String> = []
-    func exists(_ p: String) -> Bool { files.contains(p) || executables.contains(p) }
+    var regularFiles: Set<String> = []
+    var children: [String: [String]] = [:]
+    func exists(_ p: String) -> Bool { files.contains(p) || executables.contains(p) || regularFiles.contains(p) }
     func isExecutable(_ p: String) -> Bool { executables.contains(p) }
+    func fileExists(_ p: String) -> Bool { regularFiles.contains(p) }
+    func childNames(_ directory: String) -> [String] { children[directory] ?? [] }
 }
 
 @Suite struct CatalogTests {
@@ -49,6 +53,32 @@ struct FakeProbe: FileProbe {
         #expect(found["ollama"] == "bin ollama")
         #expect(found["windsurf"] == nil)
         #expect(found["openrouter"] == nil)   // key-only providers are never "installed"
+    }
+
+    @Test func useEvidenceIgnoresInstallAndBareConfigFolders() {
+        let probe = FakeProbe(
+            files: ["/Users/t/.factory", "/Users/t/Library/Application Support/JetBrains",
+                    "/Applications/IntelliJ IDEA.app", "/Users/t/.config/amp"],
+            executables: ["/opt/homebrew/bin/amp", "/opt/homebrew/bin/droid"],
+            regularFiles: ["/Users/t/.grok/auth.json", "/Users/t/.aider.conf.yml"],
+            children: [
+                "/Users/t/.factory": ["settings.json"],
+                "/Users/t/.config/amp": ["auth.json"],
+                "/Users/t/.gemini/tmp": ["session.json"],
+                "/Users/t/.ollama/models": ["llama3"],
+            ])
+        let d = Detector(home: "/Users/t", environmentPath: "/usr/bin", probe: probe)
+        let installed = d.detected()
+        let used = d.useEvidence()
+        #expect(installed["amp"] != nil)
+        #expect(installed["jetbrains"] != nil)
+        #expect(used["droid"] == nil)          // settings.json is config, not a login or a log
+        #expect(used["jetbrains"] == nil)
+        #expect(used["amp"] == "~/.config/amp")
+        #expect(used["grok"] == "~/.grok/auth.json")
+        #expect(used["aider"] == "~/.aider.conf.yml")
+        #expect(used["gemini"] == "~/.gemini/tmp")
+        #expect(used["ollama"] == "~/.ollama/models")
     }
 
     @Test func userChoiceWinsOverDetection() {

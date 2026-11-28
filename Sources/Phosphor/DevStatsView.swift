@@ -53,38 +53,42 @@ struct DevStatsView: View {
         let c = e.counts
         let stale = Date().timeIntervalSince(c.fetchedAt) > 600
         VStack(alignment: .leading, spacing: 2) {
+            let pace = c.mergePace()
+            Text(theme.name(pace.todayMultiple.map { T.t("dev.todayPace", "\(c.mergedToday)", DevCounts.multiple($0)) }
+                             ?? T.t("dev.today", "\(c.mergedToday)")))
+                .font(theme.font(15, .semibold))
+                .foregroundStyle(theme.fg)
+                .lineLimit(1)
             HStack(spacing: 6) {
-                Text(theme.name(T.t("dev.thisWeek", "\(c.merged7)")))
-                    .font(theme.font(15, .semibold)).foregroundStyle(theme.fg)
-                if let wow = c.weekOverWeek() {
-                    Text(DevCounts.changeText(delta: wow.delta, percent: wow.percent))
-                        .font(theme.font(12, .semibold))
-                        .foregroundStyle(wow.delta < 0 ? theme.warn : theme.fg)
-                }
-                UsageSparkline(values: c.prSparkline().map(Double.init), tint: theme.fg, width: 64,
-                               helpText: c.mergedDaily == nil ? "Merged PRs, four weeks" : "Merged PRs, last 14 days")
-                Spacer(minLength: 4)
-                Text(theme.name(T.t("dev.today", "\(c.mergedToday)")))
-                    .font(theme.font(12, .semibold)).foregroundStyle(theme.fg)
-            }
-            .lineLimit(1).minimumScaleFactor(0.75)
-            HStack(spacing: 6) {
-                Text(theme.name(T.t("dev.thirty", "\(c.merged30)", String(format: "%.1f", c.prsPerWeek))))
+                Text(theme.name(T.t("dev.summary", "\(c.merged30)", DevCounts.dayRate(pace.perDay), DevCounts.weekRate(pace.perWeek))))
+                    .font(theme.font(12))
                     .foregroundStyle(theme.fg)
-                if let prev = c.previous30Change() {
-                    Text(DevCounts.changeText(delta: prev.delta, percent: prev.percent))
-                        .foregroundStyle(prev.delta < 0 ? theme.warn : theme.dim)
-                        .help("Last 30 days versus the 30 days before")
-                }
+                    .lineLimit(1)
                 Spacer(minLength: 4)
-                Text(theme.name(e.placement.label))
-                    .font(theme.font(9))
-                    .foregroundStyle(theme.dim)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Capsule().fill(theme.fg.opacity(0.08)))
-                    .help(PRBenchmark.source)
+                PlacementBadge(label: e.placement.label, elite: e.placement.tier == "Elite", theme: theme)
+                    .help(PRBenchmark.source + " " + T.t("dev.teamMark"))
             }
-            .font(theme.font(11)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
+            if let hit = rankHit(c) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(theme.name(T.t("dev.rank",
+                                       PRRankTable.percentText(hit.topPercentLow),
+                                       PRRankTable.percentText(hit.topPercentHigh))))
+                        .font(theme.font(15, .semibold))
+                        .foregroundStyle(theme.fg)
+                        .lineLimit(1)
+                    if let next = hit.next {
+                        Text(theme.name(T.t("dev.rankNext", "\(next.topPercent)", "\(next.perWeekLow)", "\(next.perWeekHigh)")))
+                            .font(theme.font(9))
+                            .foregroundStyle(theme.dim)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Text(hit.builtAt)
+                        .font(theme.font(9))
+                        .foregroundStyle(theme.dim)
+                }
+                .help(dev.rankTable?.source ?? "")
+            }
             HStack(spacing: 6) {
                 Text("@\(c.login)").foregroundStyle(theme.dim)
                 Text(theme.name(T.t("dev.updated", T.clock(c.fetchedAt))))
@@ -105,6 +109,51 @@ struct DevStatsView: View {
             }
             .font(theme.font(10)).monospacedDigit().lineLimit(1)
         }
+    }
+
+    /// Rank of public pull requests only. Nil hides the line.
+    private func rankHit(_ counts: DevCounts) -> PRRankTable.Hit? {
+        guard let table = dev.rankTable, let opened = counts.publicOpened7 else { return nil }
+        return table.lookup(publicCount: opened)
+    }
+}
+
+/// Elite keeps a thin outline. The outline shimmers on the same two periods as before.
+/// The fill, the halo, and the gold are gone so the chip stays quiet on Clean.
+struct PlacementBadge: View {
+    let label: String
+    let elite: Bool
+    let theme: Theme
+
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    var body: some View {
+        if elite, !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 16)) { ctx in
+                chip(at: ctx.date)
+            }
+        } else {
+            chip(at: nil)
+        }
+    }
+
+    private func chip(at date: Date?) -> some View {
+        let shimmer = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 3.6 + 0.7) } ?? 0.35
+        let title = Text(theme.name(label))
+            .font(theme.font(9, .bold))
+            .foregroundStyle(elite ? theme.fg : theme.dim)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .fixedSize()
+        return title
+            .background {
+                if elite {
+                    Capsule()
+                        .strokeBorder(theme.fg.opacity(0.35 + 0.45 * shimmer), lineWidth: 1)
+                } else {
+                    Capsule().strokeBorder(theme.fg.opacity(0.16), lineWidth: 1)
+                }
+            }
+            .accessibilityLabel(label)
     }
 }
 

@@ -224,12 +224,28 @@ public enum ProviderCatalog {
 public protocol FileProbe: Sendable {
     func exists(_ path: String) -> Bool
     func isExecutable(_ path: String) -> Bool
+    /// A regular file. A directory path is not a credential.
+    func fileExists(_ path: String) -> Bool
+    /// Names directly inside a directory. Empty when the path is missing.
+    func childNames(_ directory: String) -> [String]
+}
+
+extension FileProbe {
+    public func fileExists(_ path: String) -> Bool { false }
+    public func childNames(_ directory: String) -> [String] { [] }
 }
 
 public struct LocalFileProbe: FileProbe {
     public init() {}
     public func exists(_ path: String) -> Bool { FileManager.default.fileExists(atPath: path) }
     public func isExecutable(_ path: String) -> Bool { FileManager.default.isExecutableFile(atPath: path) }
+    public func fileExists(_ path: String) -> Bool {
+        var dir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &dir) && !dir.boolValue
+    }
+    public func childNames(_ directory: String) -> [String] {
+        (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
+    }
 }
 
 public struct Detector: Sendable {
@@ -249,6 +265,30 @@ public struct Detector: Sendable {
         var seen = Set<String>()
         self.searchPath = dirs.filter { !$0.isEmpty && seen.insert($0).inserted }
         self.appDirs = ["/Applications", "\(home)/Applications", "/Applications/Setapp"]
+    }
+
+    /// Credential files and log/login files. A binary, an app, or a bare config folder does not count.
+    public func useEvidence() -> [String: String] {
+        var out: [String: String] = [:]
+        for (id, rels) in ServiceUse.credentialFiles {
+            for rel in rels where probe.fileExists("\(home)/\(rel)") {
+                out[id] = "~/\(rel)"
+                break
+            }
+        }
+        for (id, rels) in ServiceUse.activityDirectories where out[id] == nil {
+            for rel in rels {
+                let hit = probe.childNames("\(home)/\(rel)").contains(where: ServiceUse.isActivityFile)
+                if hit { out[id] = "~/\(rel)"; break }
+            }
+        }
+        for (id, rels) in ServiceUse.logDirectories where out[id] == nil {
+            for rel in rels {
+                let hit = probe.childNames("\(home)/\(rel)").contains(where: ServiceUse.isLogChild)
+                if hit { out[id] = "~/\(rel)"; break }
+            }
+        }
+        return out
     }
 
     /// The first thing that shows `spec` is installed ("bin claude", "app Cursor.app", "~/.kiro"), or nil.

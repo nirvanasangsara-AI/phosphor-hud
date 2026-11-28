@@ -13,7 +13,11 @@ struct RootView: View {
     var body: some View {
         let theme = registry.theme(prefs.theme)
         TimelineView(.periodic(from: .now, by: 20)) { ctx in
-            if prefs.hudUserSized, prefs.hudWidth >= 240, prefs.hudHeight >= 140 {
+            if !prefs.collapse.expanded {
+                collapsedStrip(theme, now: ctx.date)
+                    .fixedSize()
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { onResize($0) }
+            } else if prefs.hudUserSized, prefs.hudWidth >= 240, prefs.hudHeight >= 140 {
                 ScrollView(.vertical, showsIndicators: false) {
                     panel(theme, now: ctx.date)
                 }
@@ -25,6 +29,42 @@ struct RootView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// One line: the title, the highest usage, and the soonest reset. The window keeps this height while folded.
+    private func collapsedStrip(_ theme: Theme, now: Date) -> some View {
+        HStack(spacing: 8) {
+            Text(theme.name(stripLine(theme, now: now)))
+                .font(theme.font(11, .semibold))
+                .foregroundStyle(theme.fg)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .modifier(CollapseStripGestures())
+            CollapsePinButton(theme: theme)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(width: panelWidth(theme, count: store.visible.count), alignment: .leading)
+        .background { BackdropView(theme: theme) }
+        .clipShape(RoundedRectangle(cornerRadius: theme.corner, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: theme.corner, style: .continuous)
+                .strokeBorder(theme.border ?? .clear, lineWidth: theme.borderWidth)
+        )
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func stripLine(_ theme: Theme, now: Date) -> String {
+        let header = theme.headerText(online: store.visible.count)
+        let title = header.count <= 18 ? header : "Φ"
+        let gauges = store.visible.flatMap(\.gauges)
+        guard let peak = gauges.max(by: { $0.usedPercent < $1.usedPercent }) else { return title }
+        let pct = "\(Int(peak.usedPercent.rounded()))%"
+        let soonest = gauges.compactMap(\.resetsAt).filter { $0 > now }.min()
+        let countdown = T.countdown(to: soonest, now: now)
+        if countdown.isEmpty { return "\(title)  \(pct)" }
+        return "\(title)  \(pct)  ·  \(countdown)"
     }
 
     /// "Logs 7D: 182M tokens · ≈$412 API-equivalent" for tools whose session logs Phosphor reads.
@@ -144,9 +184,8 @@ struct Header: View {
                 Text(status)
                     .font(theme.font(10))
                     .foregroundStyle(theme.dim)
-                if !Prefs.shared.hidden.isEmpty {
-                    HiddenServicesButton(theme: theme, store: store)
-                }
+                HiddenServicesButton(theme: theme, store: store)
+                CollapsePinButton(theme: theme)
                 Button { Prefs.shared.showChart.toggle() } label: {
                     Image(systemName: Prefs.shared.showChart ? "chart.bar.fill" : "chart.bar")
                         .font(.system(size: 10)).foregroundStyle(theme.dim)
@@ -154,6 +193,8 @@ struct Header: View {
                 .buttonStyle(.plain)
                 .help("Show or hide the 14-day usage chart (tokens and API-equivalent cost from local logs)")
             }
+            .contentShape(Rectangle())
+            .modifier(CollapseStripGestures())
             if let t = store.monthlyTotal {
                 HStack(spacing: 6) {
                     Text(theme.name("Monthly")).font(theme.font(10)).foregroundStyle(theme.dim)
@@ -171,6 +212,49 @@ struct Header: View {
         guard let t = store.lastRefresh else { return "" }
         let m = Int(now.timeIntervalSince(t) / 60)
         return theme.name(m < 1 ? "live" : "\(m)m ago")
+    }
+}
+
+/// Header pin. Filled and labelled while the HUD is held open. Clicking again returns to the saved fold mode.
+struct CollapsePinButton: View {
+    let theme: Theme
+    @ObservedObject private var prefs = Prefs.shared
+
+    var body: some View {
+        Button { CollapseInput.send(.togglePin) } label: {
+            HStack(spacing: 3) {
+                Image(systemName: prefs.collapse.pinned ? "pin.fill" : "pin")
+                if prefs.collapse.pinned {
+                    Text(T.t("menu.collapsePin"))
+                        .font(theme.font(9, .semibold))
+                }
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(prefs.collapse.pinned ? theme.warn : theme.dim)
+            .padding(.horizontal, prefs.collapse.pinned ? 6 : 2)
+            .padding(.vertical, 2)
+            .background(prefs.collapse.pinned ? theme.warn.opacity(0.18) : Color.clear, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(prefs.collapse.pinned ? T.t("collapse.unpinHelp") : T.t("collapse.pinHelp"))
+        .accessibilityLabel(T.t("menu.collapsePin"))
+        .accessibilityValue(prefs.collapse.pinned ? T.t("menu.collapsePin") : T.t("collapse.unpinHelp"))
+    }
+}
+
+/// Double-click toggles. In auto mode a click holds the open panel until the pointer leaves.
+private struct CollapseStripGestures: ViewModifier {
+    @ObservedObject private var prefs = Prefs.shared
+
+    func body(content: Content) -> some View {
+        switch prefs.collapse.mode {
+        case .doubleClick:
+            content.onTapGesture(count: 2) { CollapseInput.send(.doubleClick) }
+        case .auto:
+            content.onTapGesture { CollapseInput.send(.clickStrip) }
+        case .pin:
+            content
+        }
     }
 }
 
@@ -1185,10 +1269,11 @@ struct HiddenServicesButton: View {
     var body: some View {
         Button { pop.on.toggle() } label: {
             HStack(spacing: 3) {
-                Image(systemName: "eye.slash")
+                Image(systemName: "eye")
                     .font(.system(size: 9, weight: .semibold))
-                Text(theme.name(T.t("hidden.count", "\(prefs.hidden.count)")))
+                Text(theme.name(T.t("hidden.title")))
                     .font(theme.font(9, .medium))
+                    .lineLimit(1)
             }
             .foregroundStyle(theme.dim)
         }
@@ -1213,26 +1298,30 @@ struct HiddenServicesList: View {
             Text(T.t("hidden.body"))
                 .font(.system(size: 10)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            let ids = (store.snapshots.map(\.id) + prefs.hidden.sorted()).uniqued()
+            let catalog = ProviderCatalog.all.map(\.id)
+            let extra = store.snapshots.map(\.id).filter { !catalog.contains($0) }
+            let ids = catalog + extra
+            ScrollView {
             ForEach(ids, id: \.self) { id in
-                let on = !prefs.hidden.contains(id)
                 let name = store.snapshots.first { $0.id == id }?.info.name ?? ProviderInfo.lookup(id).name
-                Button {
-                    if on { prefs.hideProvider(id) } else { prefs.showProvider(id) }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: on ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(on ? theme.tint(ProviderInfo.lookup(id)) : .secondary)
-                        Text(name).foregroundStyle(.primary)
-                        Spacer()
-                        if !on { Text(T.t("hidden.badge")).font(.system(size: 10)).foregroundStyle(.secondary) }
+                let mode = prefs.display(for: id)
+                HStack(spacing: 8) {
+                    Text(name).foregroundStyle(.primary).lineLimit(1)
+                    Spacer(minLength: 8)
+                    Menu(T.t(mode.labelKey)) {
+                        ForEach(ServiceUse.Display.allCases, id: \.self) { choice in
+                            Button(T.t(choice.labelKey)) { prefs.setDisplay(id, choice) }
+                        }
                     }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
-                .buttonStyle(.plain)
             }
+            }
+            .frame(maxHeight: 420)
         }
         .padding(12)
-        .frame(width: 260, alignment: .leading)
+        .frame(width: 320, alignment: .leading)
     }
 }
 

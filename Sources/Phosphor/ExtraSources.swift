@@ -46,13 +46,15 @@ struct LogUsageSource: UsageSource {
     let logs: UsageLogs.Snapshot
     func fetch() async -> [ProviderSnapshot] {
         let info = ExtraSources.info(spec)
-        guard let week = logs.week[spec.id], week.tokens > 0 else {
-            let why = logs.scannedAt == nil ? "Scanning local logs…" : "Installed · no token usage in its logs (35 days)"
+        guard let month = logs.month[spec.id], month.tokens > 0 else {
+            let why = logs.scannedAt == nil ? "Scanning local logs…" : "Installed · no token usage in its logs (30 days)"
             return [ProviderSnapshot(info: info, state: evidence == nil ? .unavailable(why) : .idle(why, plan: nil), updatedAt: Date())]
         }
+        let week = logs.week[spec.id]
         var w = [UsageWindow.meter("TODAY", used: Double(logs.today[spec.id]?.tokens ?? 0), unit: "tokens"),
-                 UsageWindow.meter("7D", used: Double(week.tokens), unit: "tokens")]
-        if week.cost > 0 { w.append(.meter("7D EST", used: week.cost, unit: "usd")) }
+                 UsageWindow.meter("7D", used: Double(week?.tokens ?? 0), unit: "tokens"),
+                 UsageWindow.meter("30D", used: Double(month.tokens), unit: "tokens")]
+        if month.cost > 0 { w.append(.meter("30D EST", used: month.cost, unit: "usd")) }
         return [ProviderSnapshot(info: info, state: .ok(windows: w, plan: "local logs"), updatedAt: Date())]
     }
 }

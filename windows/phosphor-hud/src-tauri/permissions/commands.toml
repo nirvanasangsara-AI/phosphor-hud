@@ -42,3 +42,18 @@ commands.allow = ["set_phone_sync"]
 identifier = "allow-rotate-phone-code"
 description = "Issue a new pairing code."
 commands.allow = ["rotate_phone_code"]
+
+[[permission]]
+identifier = "allow-collapse-prefs"
+description = "Read the HUD collapse mode."
+commands.allow = ["collapse_prefs"]
+
+[[permission]]
+identifier = "allow-set-collapse-mode"
+description = "Remember the HUD collapse mode."
+commands.allow = ["set_collapse_mode"]
+
+[[permission]]
+identifier = "allow-set-hud-collapsed"
+description = "Fold or unfold the HUD window from its top-left corner."
+commands.allow = ["set_hud_collapsed"]

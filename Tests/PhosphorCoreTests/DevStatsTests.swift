@@ -56,7 +56,7 @@ import Foundation
     @Test func queriesAndCounts() {
         let now = ISO8601DateFormatter().date(from: "2026-11-27T02:00:00+09:00")!
         let q = GitHubQueries.all(login: "octo", now: now, tz: TimeZone(identifier: "Asia/Seoul")!)
-        #expect(q.count == 16)
+        #expect(q.count == 18)
         #expect(q.first { $0.key == "merged30" }?.q == "author:octo type:pr is:merged merged:>=2026-10-27")
         #expect(q.first { $0.key == "merged30Prev" }?.q == "author:octo type:pr is:merged merged:\(GitHubQueries.day(now.addingTimeInterval(-60 * 86_400)))..\(GitHubQueries.day(now.addingTimeInterval(-31 * 86_400)))")
         #expect(q.first { $0.key == "mergedToday" }?.q.hasSuffix("merged:>=2026-11-26T15:00:00Z") == true)
@@ -73,6 +73,26 @@ import Foundation
         #expect(t?.previousAverage == 20 && t?.change == -0.5)
         #expect(abs(c.prsPerWeek - 73 / (30.0 / 7)) < 1e-9)
         #expect(c.prSparkline() == [15, 25, 20, 10])
+    }
+
+    @Test func thirtyDayPaceIsDailyAndWeeklyAndComparedWithToday() {
+        var c = DevCounts(login: "octo", fetchedAt: Date())
+        c.merged30 = 83
+        c.mergedToday = 7
+        c.merged7 = 19
+        let pace = c.mergePace()
+        #expect(abs(pace.perDay - 83.0 / 30) < 1e-9)
+        #expect(abs(pace.perWeek - 83.0 * 7 / 30) < 1e-9)
+        #expect(DevCounts.dayRate(pace.perDay) == "2.8")
+        #expect(DevCounts.weekRate(pace.perWeek) == "19")
+        #expect(DevCounts.multiple(pace.todayMultiple!) == "2.5")
+        #expect(DevCounts.multiple(pace.weekMultiple!) == "1.0")
+
+        c.merged30 = 0
+        c.mergedToday = 7
+        let empty = c.mergePace()
+        #expect(empty.todayMultiple == nil)
+        #expect(empty.weekMultiple == nil)
     }
 
     @Test func oldDevStatsFileDecodesWithoutNewFields() throws {

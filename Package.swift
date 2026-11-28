@@ -12,7 +12,8 @@ let package = Package(
     platforms: [.macOS(.v14)],
     targets: [
         // Foundation-only logic (catalog, log scanning, pricing, alerts, status, export): unit-tested.
-        .target(name: "PhosphorCore", path: "Sources/PhosphorCore"),
+        .target(name: "PhosphorCore", path: "Sources/PhosphorCore",
+                resources: [.copy("PRRankSnapshot.json")]),
         .executableTarget(
             name: "Phosphor",
             dependencies: ["PhosphorCore"],

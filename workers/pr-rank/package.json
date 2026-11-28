@@ -1,0 +1,8 @@
+{
+  "name": "phosphor-pr-rank",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test src/fit.test.mjs"
+  }
+}

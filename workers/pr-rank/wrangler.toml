@@ -1,0 +1,12 @@
+name = "phosphor-pr-rank"
+main = "src/index.js"
+compatibility_date = "2026-11-28"
+
+# Weekly. Each run samples about 1% of the hours in the last 7 days.
+[triggers]
+crons = ["0 6 * * 1"]
+
+# npx wrangler kv namespace create PR_RANK
+[[kv_namespaces]]
+binding = "PR_RANK"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"

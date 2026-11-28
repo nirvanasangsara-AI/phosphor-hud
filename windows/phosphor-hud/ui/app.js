@@ -1,5 +1,107 @@
 const invoke = (cmd, args) => window.__TAURI__.core.invoke(cmd, args);
 
+// Same transitions as Collapse.reduce in Sources/PhosphorCore/Collapse.swift.
+const HOVER_LEAVE_MS = 800;
+
+function freshCollapse() {
+  return { mode: "doubleClick", remembered: "doubleClick", expanded: true, held: false, armed: false };
+}
+
+function restoreCollapse(mode, remembered) {
+  if (mode === "pin") {
+    return {
+      mode: "pin",
+      remembered: remembered === "auto" ? "auto" : "doubleClick",
+      expanded: true,
+      held: false,
+      armed: false,
+    };
+  }
+  if (mode === "auto") {
+    return { mode: "auto", remembered: "auto", expanded: false, held: false, armed: false };
+  }
+  return freshCollapse();
+}
+
+function applyMode(state, mode) {
+  const next = { ...state, held: false, armed: false };
+  if (mode === "pin") {
+    if (next.mode !== "pin") next.remembered = next.mode;
+    next.mode = "pin";
+    next.expanded = true;
+  } else if (mode === "auto") {
+    next.mode = "auto";
+    next.remembered = "auto";
+    next.expanded = false;
+  } else {
+    const switching = next.mode !== "doubleClick";
+    next.mode = "doubleClick";
+    next.remembered = "doubleClick";
+    if (switching) next.expanded = true;
+  }
+  return next;
+}
+
+function reduceCollapse(state, event) {
+  if (event === "pin") {
+    if (state.mode === "pin") return applyMode(state, state.remembered === "auto" ? "auto" : "doubleClick");
+    const next = { ...state, remembered: state.mode };
+    return applyMode(next, "pin");
+  }
+  if (event.choose) return applyMode(state, event.choose);
+  if (event === "double") {
+    if (state.mode !== "doubleClick") return state;
+    return { ...state, expanded: !state.expanded, held: false, armed: false };
+  }
+  if (event === "enter") {
+    if (state.mode !== "auto") return state;
+    return { ...state, expanded: true, armed: false };
+  }
+  if (event === "leave") {
+    if (state.mode !== "auto" || !state.expanded) return state;
+    if (state.held) return { ...state, expanded: false, held: false, armed: false };
+    return { ...state, armed: true };
+  }
+  if (event === "delay") {
+    if (state.mode !== "auto" || !state.armed || state.held) return state;
+    return { ...state, expanded: false, armed: false };
+  }
+  if (event === "click") {
+    if (state.mode !== "auto" || !state.expanded) return state;
+    return { ...state, held: true, armed: false };
+  }
+  return state;
+}
+
+let collapse = freshCollapse();
+let collapseTimer = 0;
+let collapseReady = false;
+
+function sendCollapse(event) {
+  const before = collapse;
+  const next = reduceCollapse(before, event);
+  if (next.armed && !before.armed) {
+    clearTimeout(collapseTimer);
+    collapseTimer = setTimeout(() => sendCollapse("delay"), HOVER_LEAVE_MS);
+  } else if (!next.armed) {
+    clearTimeout(collapseTimer);
+  }
+  collapse = next;
+  const panel = document.getElementById("panel");
+  panel.classList.toggle("collapsed", !collapse.expanded);
+  const pin = document.getElementById("pin");
+  pin.classList.toggle("on", collapse.mode === "pin");
+  pin.textContent = collapse.mode === "pin" ? "고정됨" : "고정";
+  const select = document.getElementById("collapse-mode");
+  if (select.value !== collapse.mode) select.value = collapse.mode;
+  if (before.expanded !== collapse.expanded) {
+    invoke("set_hud_collapsed", { collapsed: !collapse.expanded }).catch(() => {});
+  }
+  if (collapseReady && (before.mode !== collapse.mode || before.remembered !== collapse.remembered)) {
+    invoke("set_collapse_mode", { mode: collapse.mode, remembered: collapse.remembered }).catch(() => {});
+  }
+}
+
 const rowsEl = document.getElementById("rows");
 const footEl = document.getElementById("foot");
 const alertsEl = document.getElementById("alerts");
@@ -46,6 +148,11 @@ function render(model) {
   const gauged = model.rows.flatMap((r) => r.windows.filter((w) => w.gauged));
   const peak = gauged.reduce((m, w) => Math.max(m, w.usedPercent || 0), 0);
   peakEl.textContent = gauged.length ? `Φ ${pct(peak)}%` : "";
+  const soonest = gauged
+    .filter((w) => typeof w.resetsAt === "number")
+    .sort((a, b) => a.resetsAt - b.resetsAt)[0];
+  const resetEl = document.getElementById("reset");
+  resetEl.textContent = soonest && soonest.resetsIn ? `· ${soonest.resetsIn}` : "";
 
   if (model.alerts && model.alerts.length) {
     alertsEl.hidden = false;
@@ -156,6 +263,31 @@ async function refresh() {
 
 document.getElementById("refresh").addEventListener("click", refresh);
 document.getElementById("hide").addEventListener("click", () => invoke("hide_hud"));
+document.getElementById("pin").addEventListener("click", (event) => {
+  event.stopPropagation();
+  sendCollapse("pin");
+});
+document.getElementById("pin").addEventListener("dblclick", (event) => event.stopPropagation());
+document.getElementById("collapse-mode").addEventListener("change", (event) => {
+  sendCollapse({ choose: event.target.value });
+});
+document.getElementById("collapse-mode").addEventListener("click", (event) => event.stopPropagation());
+document.getElementById("collapse-mode").addEventListener("dblclick", (event) => event.stopPropagation());
+document.getElementById("strip").addEventListener("click", () => sendCollapse("click"));
+document.getElementById("strip").addEventListener("dblclick", () => sendCollapse("double"));
+document.getElementById("panel").addEventListener("mouseenter", () => sendCollapse("enter"));
+document.getElementById("panel").addEventListener("mouseleave", () => sendCollapse("leave"));
+invoke("collapse_prefs")
+  .then((prefs) => {
+    collapse = freshCollapse();
+    const mode = prefs.mode === "pin" || prefs.mode === "auto" ? prefs.mode : "doubleClick";
+    sendCollapse({ choose: mode });
+    if (mode === "pin" && prefs.remembered === "auto") collapse.remembered = "auto";
+  })
+  .catch(() => {})
+  .finally(() => {
+    collapseReady = true;
+  });
 invoke("app_version").then((version) => {
   document.querySelector(".name").textContent = `Phosphor ${version}`;
   document.title = `Phosphor ${version}`;

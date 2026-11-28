@@ -9,14 +9,21 @@
 <body>
   <div id="panel">
     <header>
-      <div class="brand" data-tauri-drag-region>
+      <div class="brand" id="strip" data-tauri-drag-region>
         <span class="phi">Φ</span>
         <span class="name">Phosphor</span>
         <span id="peak" class="peak"></span>
+        <span id="reset" class="peak"></span>
       </div>
       <div class="actions">
-        <button id="refresh" type="button" title="Refresh">Refresh</button>
-        <button id="hide" type="button" title="Hide">Hide</button>
+        <button id="pin" type="button" title="항상 펼칩니다. 다시 누르면 이전 접기 방식으로 돌아갑니다.">고정</button>
+        <select id="collapse-mode" title="접기 방식" aria-label="접기 방식">
+          <option value="pin">고정</option>
+          <option value="doubleClick">더블클릭</option>
+          <option value="auto">자동 접기</option>
+        </select>
+        <button id="refresh" class="extra" type="button" title="Refresh">Refresh</button>
+        <button id="hide" class="extra" type="button" title="Hide">Hide</button>
       </div>
     </header>
     <div id="alerts" class="alerts" hidden></div>
