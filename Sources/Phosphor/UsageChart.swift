@@ -78,14 +78,16 @@ struct UsageChartView: View {
                 }
                 .frame(height: 110)
             }
-            if !logs.pricesReady && logs.total(days: 30).cost == 0 {
-                Text(theme.name(T.t("logs.priceMissing")))
-                    .font(theme.font(9, .semibold)).foregroundStyle(theme.warn).lineLimit(1)
-            } else {
-                HStack(spacing: 8) {
-                    summary("Today", logs.total(days: 1))
-                    summary("7D", logs.total(days: 7))
-                    summary("30D", logs.total(days: 30))
+            Group {
+                if !logs.pricesReady && logs.total(days: 30).cost == 0 {
+                    Text(theme.name(T.t("logs.priceMissing")))
+                        .font(theme.font(9, .semibold)).foregroundStyle(theme.warn).lineLimit(1)
+                } else {
+                    HStack(spacing: 8) {
+                        summary("Today", logs.total(days: 1))
+                        summary("7D", logs.total(days: 7))
+                        summary("30D", logs.total(days: 30))
+                    }
                 }
             }
             .help("Tokens counted from Claude Code / Codex / Gemini CLI / Cline / Roo Code logs on this Mac, priced at "
