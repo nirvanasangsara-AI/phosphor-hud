@@ -22,6 +22,8 @@ use tauri_plugin_autostart::ManagerExt;
 struct Prefs {
     demo: Mutex<bool>,
     show_dev: Mutex<bool>,
+    phone_sync: Mutex<bool>,
+    phone: Mutex<Option<phosphor_core::sync::PhoneSync>>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -30,6 +32,8 @@ struct PrefFile {
     demo: bool,
     #[serde(default)]
     show_dev: bool,
+    #[serde(default)]
+    phone_sync: bool,
 }
 
 struct Net;
@@ -292,6 +296,113 @@ fn command_text(program: &Path, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+fn save_prefs(prefs: &Prefs) {
+    let demo = prefs.demo.lock().map(|g| *g).unwrap_or(false);
+    let show_dev = prefs.show_dev.lock().map(|g| *g).unwrap_or(false);
+    let phone_sync = prefs.phone_sync.lock().map(|g| *g).unwrap_or(false);
+    write_prefs(
+        &support_dir(),
+        &PrefFile {
+            demo,
+            show_dev,
+            phone_sync,
+        },
+    );
+}
+
+fn host_label() -> String {
+    std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_else(|_| "Phosphor".into())
+}
+
+fn ensure_phone(prefs: &Prefs) -> bool {
+    let mut slot = match prefs.phone.lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    if slot.is_some() {
+        return true;
+    }
+    let path = support_dir().join("phone-sync.json");
+    for port in phosphor_core::sync::DEFAULT_PORT..phosphor_core::sync::DEFAULT_PORT + 10 {
+        if let Ok(server) = phosphor_core::sync::PhoneSync::start(
+            &format!("0.0.0.0:{port}"),
+            &path,
+            &host_label(),
+            now_secs(),
+        ) {
+            *slot = Some(server);
+            return true;
+        }
+    }
+    false
+}
+
+fn publish_phone(prefs: &Prefs, model: &HudModel) {
+    if let Ok(slot) = prefs.phone.lock() {
+        if let Some(server) = slot.as_ref() {
+            server.set_rows(phosphor_core::sync::rows_from_hud(model), now_secs());
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PhoneSyncView {
+    enabled: bool,
+    host: String,
+    port: u16,
+    code: String,
+    link: String,
+    qr_svg: String,
+}
+
+fn phone_view(prefs: &Prefs) -> PhoneSyncView {
+    let enabled = prefs.phone_sync.lock().map(|g| *g).unwrap_or(false);
+    if !enabled {
+        return PhoneSyncView {
+            enabled: false,
+            host: String::new(),
+            port: 0,
+            code: String::new(),
+            link: String::new(),
+            qr_svg: String::new(),
+        };
+    }
+    let host = phosphor_core::sync::lan_ip();
+    let (port, code) = prefs
+        .phone
+        .lock()
+        .ok()
+        .and_then(|slot| {
+            slot.as_ref()
+                .map(|server| (server.port, server.pairing().0))
+        })
+        .unwrap_or((0, String::new()));
+    let link = phosphor_core::sync::pair_link(&host, port, &code);
+    PhoneSyncView {
+        enabled: true,
+        host,
+        port,
+        code,
+        link: link.clone(),
+        qr_svg: qr_svg(&link),
+    }
+}
+
+fn qr_svg(text: &str) -> String {
+    use qrcode::render::svg;
+    use qrcode::QrCode;
+    match QrCode::new(text.as_bytes()) {
+        Ok(code) => code
+            .render::<svg::Color<'_>>()
+            .min_dimensions(180, 180)
+            .build(),
+        Err(_) => String::new(),
+    }
+}
+
 fn hud(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("hud")
 }
@@ -314,7 +425,9 @@ fn hide_hud_window(app: &AppHandle) {
 fn hud_state(prefs: State<Prefs>) -> HudModel {
     let demo = *prefs.demo.lock().unwrap_or_else(|e| e.into_inner());
     let show_dev = *prefs.show_dev.lock().unwrap_or_else(|e| e.into_inner());
-    build_model(demo, show_dev)
+    let model = build_model(demo, show_dev);
+    publish_phone(&prefs, &model);
+    model
 }
 
 #[tauri::command]
@@ -332,9 +445,7 @@ fn set_demo(prefs: State<Prefs>, enabled: bool) {
     if let Ok(mut demo) = prefs.demo.lock() {
         *demo = enabled;
     }
-    let show_dev = prefs.show_dev.lock().map(|g| *g).unwrap_or(false);
-    let demo = prefs.demo.lock().map(|g| *g).unwrap_or(enabled);
-    write_prefs(&support_dir(), &PrefFile { demo, show_dev });
+    save_prefs(&prefs);
 }
 
 #[tauri::command]
@@ -342,9 +453,42 @@ fn set_show_dev(prefs: State<Prefs>, enabled: bool) {
     if let Ok(mut flag) = prefs.show_dev.lock() {
         *flag = enabled;
     }
-    let demo = prefs.demo.lock().map(|g| *g).unwrap_or(false);
-    let show_dev = prefs.show_dev.lock().map(|g| *g).unwrap_or(enabled);
-    write_prefs(&support_dir(), &PrefFile { demo, show_dev });
+    save_prefs(&prefs);
+}
+
+#[tauri::command]
+fn phone_sync_state(prefs: State<Prefs>) -> PhoneSyncView {
+    phone_view(&prefs)
+}
+
+#[tauri::command]
+fn set_phone_sync(prefs: State<Prefs>, enabled: bool) -> PhoneSyncView {
+    if let Ok(mut flag) = prefs.phone_sync.lock() {
+        *flag = enabled;
+    }
+    if enabled {
+        let _ = ensure_phone(&prefs);
+        let demo = prefs.demo.lock().map(|g| *g).unwrap_or(false);
+        let show_dev = prefs.show_dev.lock().map(|g| *g).unwrap_or(false);
+        let model = build_model(demo, show_dev);
+        publish_phone(&prefs, &model);
+    } else if let Ok(mut slot) = prefs.phone.lock() {
+        if let Some(mut server) = slot.take() {
+            server.stop();
+        }
+    }
+    save_prefs(&prefs);
+    phone_view(&prefs)
+}
+
+#[tauri::command]
+fn rotate_phone_code(prefs: State<Prefs>) -> PhoneSyncView {
+    if let Ok(slot) = prefs.phone.lock() {
+        if let Some(server) = slot.as_ref() {
+            server.rotate_code(now_secs());
+        }
+    }
+    phone_view(&prefs)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -358,8 +502,15 @@ pub fn run() {
         .manage(Prefs {
             demo: Mutex::new(saved.demo),
             show_dev: Mutex::new(saved.show_dev),
+            phone_sync: Mutex::new(saved.phone_sync),
+            phone: Mutex::new(None),
         })
         .setup(|app| {
+            if let Some(prefs) = app.try_state::<Prefs>() {
+                if *prefs.phone_sync.lock().unwrap_or_else(|e| e.into_inner()) {
+                    let _ = ensure_phone(&prefs);
+                }
+            }
             if let Some(window) = app.get_webview_window("hud") {
                 let hidden = window.clone();
                 window.on_window_event(move |event| {
@@ -419,7 +570,10 @@ pub fn run() {
             hide_hud,
             show_hud,
             set_demo,
-            set_show_dev
+            set_show_dev,
+            phone_sync_state,
+            set_phone_sync,
+            rotate_phone_code
         ])
         .run(tauri::generate_context!())
         .expect("error while running Phosphor");

@@ -97,6 +97,7 @@ function render(model) {
     <div class="toggles">
       <label><input id="demo" type="checkbox" ${model.demo ? "checked" : ""}/> Demo data</label>
       <label><input id="dev" type="checkbox" ${model.showDev ? "checked" : ""}/> GitHub PRs</label>
+      <label><input id="phone-sync" type="checkbox"/> Phone sync</label>
     </div>
   `;
   document.getElementById("demo").addEventListener("change", async (e) => {
@@ -107,6 +108,41 @@ function render(model) {
     await invoke("set_show_dev", { enabled: e.target.checked });
     refresh();
   });
+  document.getElementById("phone-sync").addEventListener("change", async (e) => {
+    const view = await invoke("set_phone_sync", { enabled: e.target.checked });
+    showPhone(view);
+  });
+  loadPhone();
+}
+
+function showPhone(view) {
+  const box = document.getElementById("phone-card");
+  const toggle = document.getElementById("phone-sync");
+  if (toggle) toggle.checked = !!view.enabled;
+  if (!view || !view.enabled) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `
+    <div>Same Wi-Fi. The phone keeps a pairing token, not your logins.</div>
+    <div class="code">${escapeHtml(view.code || "")}</div>
+    <div>${escapeHtml(view.host || "")}:${view.port || ""}</div>
+    <div>${view.qrSvg || ""}</div>
+    <button id="new-code" type="button">New code</button>
+  `;
+  document.getElementById("new-code").addEventListener("click", async () => {
+    showPhone(await invoke("rotate_phone_code"));
+  });
+}
+
+async function loadPhone() {
+  try {
+    showPhone(await invoke("phone_sync_state"));
+  } catch (_) {
+    /* the card stays hidden until the command exists */
+  }
 }
 
 async function refresh() {

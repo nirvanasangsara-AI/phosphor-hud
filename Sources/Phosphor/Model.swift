@@ -349,6 +349,8 @@ final class Prefs: ObservableObject {
     /// The usage chart under the rows (tokens and API-equivalent cost from local logs).
     @Published var showChart: Bool { didSet { d.set(showChart, forKey: "showChart") } }
     @Published var showDevStats: Bool { didSet { d.set(showDevStats, forKey: "showDevStats") } }
+    /// Off until the user turns it on. Shares a usage snapshot with the Android app on this Wi-Fi.
+    @Published var phoneSync: Bool { didSet { d.set(phoneSync, forKey: "phoneSync") } }
     @Published var chartCost: Bool { didSet { d.set(chartCost, forKey: "chartCost") } }
     /// Row order dragged by hand (row ids and "group:<family>" keys); empty = default order.
     @Published var rowOrder: [String] { didSet { d.set(rowOrder, forKey: "rowOrder") } }
@@ -375,6 +377,7 @@ final class Prefs: ObservableObject {
         providerOverrides = (d.dictionary(forKey: "providerOverrides") as? [String: Bool]) ?? [:]
         showChart = d.bool(forKey: "showChart")
         showDevStats = d.bool(forKey: "showDevStats")
+        phoneSync = d.bool(forKey: "phoneSync")
         chartCost = d.object(forKey: "chartCost") as? Bool ?? true
         rowOrder = d.stringArray(forKey: "rowOrder") ?? []
         collapsedGroups = Set(d.stringArray(forKey: "collapsedGroups") ?? [])

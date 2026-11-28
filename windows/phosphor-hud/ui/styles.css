@@ -139,7 +139,14 @@ main {
 .pct { font-variant-numeric: tabular-nums; min-width: 42px; text-align: right; }
 .amount { grid-column: 2 / -1; color: var(--fg); }
 
-footer {
+.phone {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px 4px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.phone .code { color: var(--fg); font-size: 20px; letter-spacing: 0.18em; font-variant-numeric: tabular-nums; }
+.phone svg { width: 140px; height: 140px; background: white; border-radius: 8px; }
   border-top: 1px solid var(--line);
   padding: 8px 12px 10px;
   color: var(--dim);

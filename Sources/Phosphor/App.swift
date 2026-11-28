@@ -161,12 +161,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         store.$snapshots.receive(on: RunLoop.main).sink { [weak self] snaps in
             self?.updateStatusTitle(snaps)
+            guard let self, self.prefs.phoneSync else { return }
+            PhoneSyncService.shared.replaceSnapshot(phoneSnapshot(snaps, host: PhoneSyncService.shared.hostName))
+            PhoneSyncPanel.shared.noteSnapshots()
         }.store(in: &bag)
         prefs.objectWillChange.receive(on: RunLoop.main).sink { [weak self] _ in
             DispatchQueue.main.async { self?.applyPrefs() }
         }.store(in: &bag)
 
         store.start()
+        if prefs.phoneSync { _ = PhoneSyncService.shared.start() }
         startThemeCycle()
         if !demo && !staged && !UserDefaults.standard.bool(forKey: "logoPromptAnswered") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.askAboutLogos() }
@@ -451,6 +455,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let devStats = item(T.t("menu.devStats"), #selector(toggleDevStats))
         devStats.state = prefs.showDevStats ? .on : .off
         menu.addItem(devStats)
+        let phone = item(T.t("menu.phoneSync"), #selector(showPhoneSync))
+        phone.state = prefs.phoneSync ? .on : .off
+        menu.addItem(phone)
         if prefs.showDevStats, store.dev.counts != nil {
             menu.addItem(item(T.t("menu.saveReceipt"), #selector(saveReceipt)))
         }
@@ -600,6 +607,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         prefs.showDevStats.toggle()
         if prefs.showDevStats { store.dev.refreshIfDue(force: true); store.logs.refreshIfDue() }
     }
+    @objc private func showPhoneSync() { PhoneSyncPanel.shared.show(store: store) }
     @objc private func toggleChart() { prefs.showChart.toggle(); if prefs.showChart { store.logs.refreshIfDue() } }
     @objc private func toggleAlert(_ s: NSMenuItem) {
         guard let key = s.representedObject as? String else { return }

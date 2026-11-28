@@ -12,6 +12,9 @@
     "allow-hide-hud",
     "allow-show-hud",
     "allow-set-demo",
-    "allow-set-show-dev"
+    "allow-set-show-dev",
+    "allow-phone-sync-state",
+    "allow-set-phone-sync",
+    "allow-rotate-phone-code"
   ]
 }

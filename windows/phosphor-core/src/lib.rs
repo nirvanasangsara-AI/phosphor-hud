@@ -15,6 +15,7 @@ pub mod parsers;
 pub mod paths;
 pub mod pricing;
 pub mod quota;
+pub mod sync;
 pub mod timeutil;
 pub mod token_refresh;
 

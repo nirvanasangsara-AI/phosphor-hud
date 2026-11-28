@@ -124,6 +124,10 @@ This is the first Windows cut. It has not been clicked through on a physical PC 
 - Alerts show inside the HUD. There is no Windows toast yet.
 - The window is translucent, but WebView2 does not match the Mac material, and some machines draw a thin light edge.
 
+## Android
+
+The phone does not read Claude, Codex, or any other app. Turn on **Phone sync** on the Mac or Windows HUD (it is off until you do) and the Android app shows that snapshot in a home-screen widget. Pairing is a QR code on the same Wi-Fi. There is no account. Details and the trade-offs are in [docs/android.md](docs/android.md).
+
 ## Privacy
 
 - **No cookie or session scraping, no browser automation, no password prompts.** Phosphor reads only what the official tools already keep for you:

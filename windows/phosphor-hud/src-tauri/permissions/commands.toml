@@ -22,3 +22,18 @@ commands.allow = ["set_demo"]
 identifier = "allow-set-show-dev"
 description = "Toggle GitHub PR counts."
 commands.allow = ["set_show_dev"]
+
+[[permission]]
+identifier = "allow-phone-sync-state"
+description = "Read the phone pairing card."
+commands.allow = ["phone_sync_state"]
+
+[[permission]]
+identifier = "allow-set-phone-sync"
+description = "Turn phone sync on or off."
+commands.allow = ["set_phone_sync"]
+
+[[permission]]
+identifier = "allow-rotate-phone-code"
+description = "Issue a new pairing code."
+commands.allow = ["rotate_phone_code"]
