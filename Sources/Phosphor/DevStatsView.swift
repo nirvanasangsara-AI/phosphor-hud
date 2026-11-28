@@ -77,11 +77,7 @@ struct DevStatsView: View {
                         .help("Last 30 days versus the 30 days before")
                 }
                 Spacer(minLength: 4)
-                Text(theme.name(e.placement.label))
-                    .font(theme.font(9))
-                    .foregroundStyle(theme.dim)
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .background(Capsule().fill(theme.fg.opacity(0.08)))
+                PlacementBadge(label: e.placement.label, elite: e.placement.tier == "Elite", theme: theme)
                     .help(PRBenchmark.source)
             }
             .font(theme.font(11)).monospacedDigit().lineLimit(1).minimumScaleFactor(0.75)
@@ -105,6 +101,63 @@ struct DevStatsView: View {
             }
             .font(theme.font(10)).monospacedDigit().lineLimit(1)
         }
+    }
+}
+
+/// The Elite band chip breathes gold. Other bands stay quiet. Reduce Motion keeps a still glow.
+/// The label is the real PR/week rate. LinearB's published "top 10%" is the ceiling of that band,
+/// not a personal monthly goal, so the chip does not freeze on 10%.
+struct PlacementBadge: View {
+    let label: String
+    let elite: Bool
+    let theme: Theme
+
+    private var reduceMotion: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+
+    var body: some View {
+        if elite, !reduceMotion {
+            TimelineView(.animation(minimumInterval: 1.0 / 16)) { ctx in
+                chip(at: ctx.date)
+            }
+        } else {
+            chip(at: nil)
+        }
+    }
+
+    private func chip(at date: Date?) -> some View {
+        let gold = Color(hex: "#F0D48A")
+        let amber = Color(hex: "#E8A34A")
+        let breath = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 2.8) } ?? 0.62
+        let shimmer = date.map { 0.5 + 0.5 * sin($0.timeIntervalSinceReferenceDate * 2 * .pi / 3.6 + 0.7) } ?? 0.35
+        let title = Text(theme.name(label))
+            .font(theme.font(9, .bold))
+            .foregroundStyle(elite ? Color(hex: "#F7E7B4") : theme.dim)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .fixedSize()
+        return title
+            .background {
+                if elite {
+                    ZStack {
+                        Capsule()
+                            .fill(amber.opacity(0.28 + 0.32 * breath))
+                            .blur(radius: 5 + 2.5 * breath)
+                            .scaleEffect(x: 1.18 + 0.08 * breath, y: 1.55 + 0.20 * breath)
+                        Capsule()
+                            .fill(LinearGradient(colors: [gold.opacity(0.30 + 0.16 * breath), amber.opacity(0.22 + 0.14 * breath)],
+                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Capsule()
+                            .strokeBorder(
+                                LinearGradient(colors: [Color.white.opacity(0.25 + 0.35 * shimmer), gold.opacity(0.85), amber.opacity(0.55)],
+                                               startPoint: UnitPoint(x: -0.2 + shimmer, y: 0),
+                                               endPoint: UnitPoint(x: 0.4 + shimmer, y: 1)),
+                                lineWidth: 0.9)
+                    }
+                } else {
+                    Capsule().fill(theme.fg.opacity(0.08))
+                }
+            }
+            .shadow(color: elite ? gold.opacity(0.35 + 0.45 * breath) : .clear, radius: elite ? (4 + 3.5 * breath) : 0)
+            .accessibilityLabel(label)
     }
 }
 

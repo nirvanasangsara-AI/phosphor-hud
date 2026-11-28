@@ -147,7 +147,7 @@ pub fn place_prs(prs_per_week: f64) -> Placement {
         return Placement {
             tier: "Elite".into(),
             top_percent: None,
-            label: "Elite · Top 10%".into(),
+            label: format!("Elite band · {:.1} PR/wk (benchmark >2.0)", prs_per_week),
         };
     }
     let anchors = [(0.0_f64, 100.0_f64), (0.66, 60.0), (1.2, 30.0), (2.0, 10.0)];
@@ -166,10 +166,17 @@ pub fn place_prs(prs_per_week: f64) -> Placement {
         "Needs focus"
     };
     let pct = top.round() as i64;
+    let band = if prs_per_week >= 1.2 {
+        "1.2-2.0"
+    } else if prs_per_week >= 0.66 {
+        "0.66-1.2"
+    } else {
+        "<0.66"
+    };
     Placement {
         tier: tier.into(),
         top_percent: Some(pct),
-        label: format!("{tier} · est. Top {pct}%"),
+        label: format!("{tier} band · {prs_per_week:.1} PR/wk (benchmark {band})"),
     }
 }
 

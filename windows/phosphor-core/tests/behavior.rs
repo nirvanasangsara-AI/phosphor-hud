@@ -212,6 +212,10 @@ fn benchmark_and_roi_match_the_published_bands() {
     let elite = place_prs(2.1);
     assert_eq!(elite.tier, "Elite");
     assert!(elite.top_percent.is_none());
+    assert!(elite.label.contains("2.1"));
+    assert!(!elite.label.contains("Top 10%"));
+    let higher = place_prs(18.0);
+    assert_ne!(elite.label, higher.label);
     let fair = place_prs(0.0);
     assert_eq!(fair.tier, "Needs focus");
     let mut sums = HashMap::new();

@@ -16,6 +16,9 @@
     "allow-set-show-dev",
     "allow-phone-sync-state",
     "allow-set-phone-sync",
-    "allow-rotate-phone-code"
+    "allow-rotate-phone-code",
+    "allow-collapse-prefs",
+    "allow-set-collapse-mode",
+    "allow-set-hud-collapsed"
   ]
 }

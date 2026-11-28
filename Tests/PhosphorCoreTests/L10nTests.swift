@@ -52,6 +52,10 @@ import Testing
         #expect(L10n.text("logs.priceBanner", language: .korean).contains("가격표"))
         #expect(L10n.text("dev.thisWeek", language: .english, "18") == "This week 18 PRs")
         #expect(L10n.text("logs.unpriced", language: .english, "12") == "12 tokens unpriced")
+        #expect(L10n.text("menu.collapse", language: .english) == "접기 방식")
+        #expect(L10n.text("menu.collapsePin", language: .korean) == "고정")
+        #expect(L10n.text("menu.collapseDouble", language: .korean) == "더블클릭")
+        #expect(L10n.text("menu.collapseAuto", language: .korean) == "자동 접기")
     }
 
     @Test func englishModeNormalizesCodexUsageResetTitle() {

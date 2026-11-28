@@ -377,6 +377,10 @@ final class Prefs: ObservableObject {
     @Published var resetFeedURL: String { didSet { d.set(resetFeedURL, forKey: "resetFeedURL") } }
     /// `pace` or `usage`. Pace is the default: filling the quota just before reset is the goal.
     @Published var iconColorMode: String { didSet { d.set(iconColorMode, forKey: "iconColorMode") } }
+    /// Fold mode, the mode the pin button restores, and whether a double-click HUD is open.
+    @Published var collapse: CollapseState { didSet { persistCollapse() } }
+    /// Per-service 자동 / 항상 표시 / 숨김. Missing keys are 자동.
+    @Published var serviceDisplay: [String: String] { didSet { d.set(serviceDisplay, forKey: "serviceDisplay") } }
 
     var appLanguage: AppLanguage { AppLanguage(rawValue: language) ?? .english }
 
@@ -406,15 +410,65 @@ final class Prefs: ObservableObject {
         includeRumors = d.object(forKey: "includeRumors") as? Bool ?? true
         resetFeedURL = d.string(forKey: "resetFeedURL") ?? ""
         iconColorMode = d.string(forKey: "iconColorMode") ?? IconColor.Mode.pace.rawValue
+        collapse = CollapseState.restored(mode: d.string(forKey: "collapseMode"),
+                                          remembered: d.string(forKey: "collapseRemembered"),
+                                          expanded: d.object(forKey: "collapseExpanded") as? Bool)
+        serviceDisplay = (d.dictionary(forKey: "serviceDisplay") as? [String: String]) ?? [:]
+    }
+
+    func applyCollapse(_ event: CollapseEvent) {
+        collapse = Collapse.reduce(collapse, event)
+    }
+
+    private func persistCollapse() {
+        d.set(collapse.mode.rawValue, forKey: "collapseMode")
+        d.set(collapse.remembered.rawValue, forKey: "collapseRemembered")
+        d.set(collapse.expanded, forKey: "collapseExpanded")
+    }
+
+    /// The old hidden set still counts as 숨김 when the new key was never written.
+    func display(for id: String) -> ServiceUse.Display {
+        if let raw = serviceDisplay[id], let mode = ServiceUse.Display(rawValue: raw) { return mode }
+        if hidden.contains(id) { return .hidden }
+        return .auto
+    }
+
+    func setDisplay(_ id: String, _ mode: ServiceUse.Display) {
+        var next = serviceDisplay
+        next[id] = mode.rawValue
+        serviceDisplay = next
+        if mode == .hidden {
+            hidden = ProviderVisibility.hiding(id, in: hidden)
+        } else {
+            hidden = ProviderVisibility.showing(id, in: hidden)
+        }
+    }
+
+    func include(_ snap: ProviderSnapshot) -> Bool {
+        let presence: ServiceUse.Presence
+        switch snap.state {
+        case .ok: presence = .liveReading
+        case .loading: presence = .absent
+        case .idle(let message, _): presence = ServiceUse.presence(forMessage: message, connected: false)
+        case .unavailable: presence = .installOnly
+        case .error(let message):
+            presence = (message.contains("expired") || message.hasPrefix("HTTP")) ? .signedIn : .absent
+        }
+        return ServiceUse.shown(display: display(for: snap.id), inUse: ServiceUse.inUse(presence))
     }
 
     func hideProvider(_ id: String) {
-        hidden = ProviderVisibility.hiding(id, in: hidden)
+        setDisplay(id, .hidden)
     }
 
     func showProvider(_ id: String) {
-        hidden = ProviderVisibility.showing(id, in: hidden)
+        setDisplay(id, .auto)
     }
+}
+
+/// Views send fold events here. The app delegate installs the timer and the window animation.
+enum CollapseInput {
+    static var send: (CollapseEvent) -> Void = { Prefs.shared.applyCollapse($0) }
 }
 
 enum Paths {

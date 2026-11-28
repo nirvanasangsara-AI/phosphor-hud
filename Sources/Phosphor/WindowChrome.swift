@@ -168,8 +168,8 @@ final class HUDPanel: NSPanel {
                 f.size.height = startFrame.height - dy
                 f.origin.y = startFrame.maxY - f.size.height
             }
-            f.size.width = max(Self.minWidth, f.size.width)
-            f.size.height = max(Self.minHeight, f.size.height)
+            f.size.width = max(minSize.width, f.size.width)
+            f.size.height = max(minSize.height, f.size.height)
             if edge.isWest { f.origin.x = startFrame.maxX - f.size.width }
             if edge.isSouth { f.origin.y = startFrame.maxY - f.size.height }
             if let vis = limits {

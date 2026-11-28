@@ -122,15 +122,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let staged = CommandLine.arguments.contains("--stage")
     private var stage: NSWindow?
     private var optionPoll: Timer?
+    private var hoverPoll: Timer?
+    private var hoverInside = false
+    private var armedTask: Task<Void, Never>?
+    /// Expanded frame, remembered before a fold so the top-left corner can grow back.
+    private var expandedSize: NSSize?
+    /// Animate the next content-driven resize. Set when the fold state changes.
+    private var animateNextResize = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         panel = HUDPanel()
         panel.onUserResize = { [weak self] size in
             guard let self else { return }
+            if !self.prefs.collapse.expanded {
+                let width = max(size.width, HUDPanel.minWidth)
+                if var saved = self.expandedSize {
+                    saved.width = width
+                    self.expandedSize = saved
+                    UserDefaults.standard.set(Double(saved.width), forKey: "hudExpandedWidth")
+                }
+                if self.prefs.hudUserSized { self.prefs.hudWidth = width }
+                return
+            }
             self.prefs.hudUserSized = true
             self.prefs.hudWidth = size.width
             self.prefs.hudHeight = size.height
+            self.rememberExpanded(size)
         }
+        CollapseInput.send = { [weak self] event in
+            self?.sendCollapse(event)
+        }
+        expandedSize = savedExpandedSize()
         if self.prefs.hudUserSized, self.prefs.hudWidth >= HUDPanel.minWidth, self.prefs.hudHeight >= HUDPanel.minHeight {
             var f = panel.frame
             f.size = NSSize(width: self.prefs.hudWidth, height: self.prefs.hudHeight)
@@ -244,18 +266,107 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         panel.setFrameOrigin(NSPoint(x: screen.maxX - 320, y: screen.maxY - 240))
     }
 
-    /// Keep the top-left corner fixed while the content grows or shrinks.
-    /// Once the user has resized the panel themselves, we stop fighting their frame.
+    /// Keep the top-left corner fixed while the content grows, shrinks, or folds.
+    /// A user-sized panel still folds: the expanded frame is restored from the top edge.
     private func resize(to size: CGSize) {
-        guard !prefs.hudUserSized else { return }
         guard size.width > 0, size.height > 0 else { return }
+        let animate = animateNextResize
+        animateNextResize = false
+        if prefs.collapse.expanded {
+            guard !prefs.hudUserSized else { return }
+            var f = panel.frame
+            guard abs(f.width - size.width) > 0.5 || abs(f.height - size.height) > 0.5 else { return }
+            let top = f.maxY
+            f.size = size
+            f.origin.y = top - size.height
+            panel.minSize = NSSize(width: HUDPanel.minWidth, height: HUDPanel.minHeight)
+            panel.maxSize = NSSize(width: 10000, height: 10000)
+            panel.setFrame(f, display: true, animate: animate)
+            panel.invalidateShadow()
+            rememberExpanded(f.size)
+            return
+        }
         var f = panel.frame
-        guard abs(f.width - size.width) > 0.5 || abs(f.height - size.height) > 0.5 else { return }
+        let width = max(size.width, HUDPanel.minWidth)
+        let height = max(size.height, 32)
+        guard abs(f.width - width) > 0.5 || abs(f.height - height) > 0.5 else { return }
+        let top = f.maxY
+        panel.minSize = NSSize(width: HUDPanel.minWidth, height: height)
+        panel.maxSize = NSSize(width: 4000, height: height)
+        f.size = NSSize(width: width, height: height)
+        f.origin.y = top - height
+        panel.setFrame(f, display: true, animate: animate)
+        panel.invalidateShadow()
+    }
+
+    private func sendCollapse(_ event: CollapseEvent) {
+        let before = prefs.collapse
+        let after = Collapse.reduce(before, event)
+        // Remember the open frame before SwiftUI folds the content and the window follows.
+        if before.expanded && !after.expanded { rememberExpandedFrame() }
+        if before.expanded != after.expanded, !(!before.expanded && after.expanded && prefs.hudUserSized) {
+            animateNextResize = true
+        }
+        prefs.applyCollapse(event)
+        if after.armed && !before.armed {
+            armedTask?.cancel()
+            armedTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: UInt64(Collapse.hoverLeaveDelay * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                self.sendCollapse(.delayElapsed)
+            }
+        } else if !after.armed {
+            armedTask?.cancel()
+            armedTask = nil
+        }
+        if !before.expanded && after.expanded && prefs.hudUserSized {
+            restoreExpandedFrame(animate: true)
+        }
+    }
+
+    private func rememberExpandedFrame() {
+        rememberExpanded(panel.frame.size)
+    }
+
+    private func rememberExpanded(_ size: NSSize) {
+        guard size.height >= HUDPanel.minHeight else { return }
+        expandedSize = size
+        UserDefaults.standard.set(Double(size.width), forKey: "hudExpandedWidth")
+        UserDefaults.standard.set(Double(size.height), forKey: "hudExpandedHeight")
+    }
+
+    private func savedExpandedSize() -> NSSize? {
+        let d = UserDefaults.standard
+        let width = d.double(forKey: "hudExpandedWidth")
+        let height = d.double(forKey: "hudExpandedHeight")
+        guard width >= HUDPanel.minWidth, height >= HUDPanel.minHeight else { return nil }
+        return NSSize(width: width, height: height)
+    }
+
+    private func currentExpandedSize() -> NSSize? {
+        if prefs.hudUserSized, prefs.hudWidth >= HUDPanel.minWidth, prefs.hudHeight >= HUDPanel.minHeight {
+            return NSSize(width: prefs.hudWidth, height: prefs.hudHeight)
+        }
+        if let expandedSize, expandedSize.height >= HUDPanel.minHeight { return expandedSize }
+        return savedExpandedSize()
+    }
+
+    private func restoreExpandedFrame(animate: Bool) {
+        guard let size = currentExpandedSize() else { return }
+        panel.minSize = NSSize(width: HUDPanel.minWidth, height: HUDPanel.minHeight)
+        panel.maxSize = NSSize(width: 10000, height: 10000)
+        var f = panel.frame
         let top = f.maxY
         f.size = size
         f.origin.y = top - size.height
-        panel.setFrame(f, display: true)
+        panel.setFrame(f, display: true, animate: animate)
         panel.invalidateShadow()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        guard !prefs.collapse.expanded else { return }
+        restoreExpandedFrame(animate: false)
+        panel.saveFrame(usingName: "PhosphorHUD")
     }
 
     private func applyPrefs() {
@@ -271,6 +382,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Task { @MainActor in self?.updateMouseThrough() }
             }
         }
+        updateHoverPoll()
+    }
+
+    /// Auto-collapse watches the pointer against the window, including while another app is key.
+    private func updateHoverPoll() {
+        let want = prefs.collapse.mode == .auto
+        if want, hoverPoll == nil {
+            hoverPoll = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                Task { @MainActor in self?.pollHover() }
+            }
+        } else if !want {
+            hoverPoll?.invalidate()
+            hoverPoll = nil
+            hoverInside = false
+        }
+    }
+
+    private func pollHover() {
+        guard prefs.collapse.mode == .auto, let panel else { return }
+        let inside = panel.frame.contains(NSEvent.mouseLocation) && !panel.ignoresMouseEvents
+        guard inside != hoverInside else { return }
+        hoverInside = inside
+        sendCollapse(inside ? .pointerEntered : .pointerExited)
     }
 
     private func updateMouseThrough() {
@@ -279,7 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func updateStatusIcon(_ snaps: [ProviderSnapshot]) {
-        let gauges = snaps.filter { !prefs.hidden.contains($0.id) }.flatMap { snap in
+        let gauges = snaps.filter { prefs.include($0) }.flatMap { snap in
             snap.gauges.map { (snap: snap, window: $0) }
         }
         let primary = gauges.max { $0.window.usedPercent < $1.window.usedPercent }
@@ -357,6 +491,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         compact.state = prefs.compact ? .on : .off
         menu.addItem(compact)
 
+        let folds = NSMenu()
+        for mode in CollapseMode.allCases {
+            let title: String
+            switch mode {
+            case .pin: title = T.t("menu.collapsePin")
+            case .doubleClick: title = T.t("menu.collapseDouble")
+            case .auto: title = T.t("menu.collapseAuto")
+            }
+            let i = item(title, #selector(pickCollapseMode(_:)))
+            i.representedObject = mode.rawValue
+            i.state = prefs.collapse.mode == mode ? .on : .off
+            folds.addItem(i)
+        }
+        menu.addItem(submenu(T.t("menu.collapse"), folds))
+
         let opacity = NSMenu()
         for v in [1.0, 0.85, 0.7, 0.5, 0.3] {
             let i = item("\(Int(v * 100))%", #selector(pickOpacity(_:)))
@@ -412,7 +561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let i = item(label + stale + down, #selector(toggleProvider(_:)))
             i.indentationLevel = fam == nil ? 0 : 1
             i.representedObject = s.id
-            i.state = prefs.hidden.contains(s.id) ? .off : .on
+            i.state = prefs.display(for: s.id) == .hidden ? .off : .on
             providers.addItem(i)
         }
         let offline = store.snapshots.filter {
@@ -432,14 +581,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let more = NSMenu()
         let reg = store.registry
         let groups: [(String, [ProviderSpec])] = [
-            (T.t("menu.installedOnMac"), groupedFirst(reg.extras.filter { reg.detected[$0.id] != nil })),
-            (T.t("menu.notFound"), groupedFirst(reg.extras.filter { reg.detected[$0.id] == nil })),
+            (T.t("menu.installedOnMac"), groupedFirst(reg.extras.filter { reg.installed[$0.id] != nil })),
+            (T.t("menu.notFound"), groupedFirst(reg.extras.filter { reg.installed[$0.id] == nil })),
         ]
         for (title, specs) in groups where !specs.isEmpty {
             let h = NSMenuItem(title: title, action: nil, keyEquivalent: ""); h.isEnabled = false
             more.addItem(h)
             for spec in specs {
-                let how = reg.detected[spec.id] ?? (spec.sources.contains(.apiKey) ? APIKeys.howTo(spec) : T.t("menu.notInstalled"))
+                let how = reg.detected[spec.id] ?? reg.installed[spec.id]
+                    ?? (spec.sources.contains(.apiKey) ? APIKeys.howTo(spec) : T.t("menu.notInstalled"))
                 let fam = ProviderFamilies.family(of: spec.id).map { "\($0.name) › " } ?? ""
                 let i = item("\(fam)\(spec.name) — \(how)", #selector(toggleCatalogProvider(_:)))
                 i.representedObject = spec.id
@@ -449,7 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             more.addItem(.separator())
         }
         more.addItem(item(T.t("menu.rescan"), #selector(rescanProviders)))
-        providers.addItem(submenu(T.t("menu.moreProviders", "\(reg.detected.filter { !ProviderRegistry.native.contains($0.key) }.count)", "\(reg.extras.count)"), more))
+        providers.addItem(submenu(T.t("menu.moreProviders", "\(reg.installed.filter { !ProviderRegistry.native.contains($0.key) }.count)", "\(reg.extras.count)"), more))
 
         let accountsMenu = NSMenu()
         for p in reg.profiles {
@@ -605,18 +755,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
     @objc private func toggleCompact() { prefs.compact.toggle() }
+    @objc private func pickCollapseMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = CollapseMode(rawValue: raw) else { return }
+        sendCollapse(.choose(mode))
+    }
     @objc private func pickOpacity(_ s: NSMenuItem) { if let v = s.representedObject as? Double { prefs.opacity = v } }
     @objc private func toggleClickThrough() { prefs.clickThrough.toggle() }
     @objc private func toggleShowUnavailable() { prefs.showUnavailable.toggle() }
     @objc private func toggleClaudeResets() { prefs.claudeResetCredits.toggle(); store.refreshAccounts() }
     @objc private func toggleProvider(_ s: NSMenuItem) {
         guard let id = s.representedObject as? String else { return }
-        if prefs.hidden.contains(id) { prefs.hidden.remove(id) } else { prefs.hidden.insert(id) }
+        if prefs.display(for: id) == .hidden { prefs.setDisplay(id, .auto) } else { prefs.setDisplay(id, .hidden) }
         updateStatusIcon(store.snapshots)
     }
     @objc private func hideProvider(_ s: NSMenuItem) {
         guard let id = s.representedObject as? String else { return }
-        prefs.hidden = ProviderVisibility.hiding(id, in: prefs.hidden)
+        prefs.hideProvider(id)
         updateStatusIcon(store.snapshots)
     }
     @objc private func resetWindowSize() {

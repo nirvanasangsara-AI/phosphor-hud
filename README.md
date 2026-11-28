@@ -26,7 +26,7 @@ Finder에서 Phosphor를 마우스 오른쪽 단추로 클릭하고 **열기**�
 
 macOS 15 이상에서는 시스템 설정 > 개인정보 보호 및 보안으로 가서 **그래도 열기**를 눌러도 됩니다.
 
-한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위와 사용량 패널 아래의 `Φ · Phosphor · 0.3.3`에서 설치한 버전을 확인할 수 있습니다. 이 브랜치의 `VERSION`은 0.3.3입니다.
+한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위와 사용량 패널 아래의 `Φ · Phosphor · 0.3.4`에서 설치한 버전을 확인할 수 있습니다. 이 브랜치의 `VERSION`은 0.3.4입니다.
 
 ---
 
@@ -50,7 +50,7 @@ In Finder, right-click Phosphor and choose **Open**. When the dialog appears, cl
 
 On macOS 15 and later you can also open System Settings, go to Privacy & Security, and click **Open Anyway**.
 
-After that first launch it opens normally. The top line of the menu and the bottom of the usage panel read `Φ · Phosphor · 0.3.3`. This branch's `VERSION` file is 0.3.3.
+After that first launch it opens normally. The top line of the menu and the bottom of the usage panel read `Φ · Phosphor · 0.3.4`. This branch's `VERSION` file is 0.3.4.
 
 ---
 
@@ -77,6 +77,8 @@ out your burn rate, and tells you **`▲ limit 15:20 · in 1h 21m`** before you 
 - **Burn rate and run-out time on every quota bar.** Two recent samples are enough to fit a slope (last hour for 5-hour windows, last 6 hours for weekly ones).
   You get `+3.2%/h` and the time you'll hit 100 % (in the warning colour if that comes before the reset), or `≈ 83% at reset` if you'll make it. When a slope can't be fitted yet the line stays up as `measuring pace`, `steady · 0%/h`, `▲ limit reached`, or `no active session`.
 - **Always on top, natively.** A SwiftUI panel with no web runtime that floats over every Space. Compact mode, opacity, click-through, and a `Φ 94%` menu bar item.
+- **Fold.** **접기 방식** remembers one of three modes. **고정** stays open. **더블클릭** (the default) folds or opens from the header. **자동 접기** starts as a one-line strip, opens under the pointer, and folds about 0.8s after the pointer leaves. A click on the open strip holds it until the pointer leaves. The pin button in the header does the same as **고정** and returns to the mode you had chosen. The window keeps its top-left corner.
+- **Only services you actually use.** **표시할 서비스** is **자동** until you change it. A row appears when this Mac has a login file, a usage log, an API key, or a billing-screen reading. An installed app or an empty config folder (Amp, Droid, JetBrains AI, and the rest of the catalog) stays in the app and stays off the HUD until that evidence shows up. **항상 표시** and **숨김** override that per service.
 - **Language.** English by default, with in-app language switching (English, Korean, or follow your macOS system language) covering menus, settings, and burn-rate / depletion descriptions.
 - **Subscription ROI.** Local Claude Code / Codex / Gemini CLI logs are priced at API list rates (LiteLLM's public table) and set against what your plans cost: `ROI 8.4x`.
   A 14-day stacked chart shows tokens or dollars per tool.
@@ -116,7 +118,7 @@ npm install
 npm run build
 ```
 
-`npm run build` reads the repo [`VERSION`](VERSION) file and stamps it on the installer and the window. On this branch the title and the tray menu say `Phosphor 0.3.3`. A new `VERSION` shows up on the next build.
+`npm run build` reads the repo [`VERSION`](VERSION) file and stamps it on the installer and the window. On this branch the title and the tray menu say `Phosphor 0.3.4`. A new `VERSION` shows up on the next build. The Windows HUD uses the same three fold modes, with the Korean names on the pin and the menu, and keeps the top-left corner when the window height changes.
 
 The NSIS installer is under `windows/phosphor-hud/src-tauri/target/release/bundle/nsis/`. A portable `Phosphor.exe` is next to it in `target/release/`. GitHub Actions on `windows-latest` builds the same thing and uploads it as an artifact. Rust and Node are only needed if you build it yourself.
 
@@ -155,6 +157,22 @@ This is the first Windows cut. It has not been clicked through on a physical PC 
 - Themes, Korean UI, menu-bar percent, calendar export, and local git commit counts are still Mac-only.
 - Alerts show inside the HUD. There is no Windows toast yet.
 - The window is translucent, but WebView2 does not match the Mac material, and some machines draw a thin light edge.
+
+## 0.3.4
+
+The HUD can fold to one line (the title, the highest usage, and the next reset) without leaving its top-left corner.
+
+**접기 방식** is in the menu and is remembered. New installs use **더블클릭**.
+
+- **고정.** The panel stays expanded.
+- **더블클릭.** Double-click the header to fold or open it.
+- **자동 접기.** The panel starts folded. Hover the strip to open it. Move the pointer away and it folds again after about 0.8 seconds. Click the open strip and it stays open until the pointer leaves.
+
+The pin on the header is filled and labelled **고정** while it is holding the panel open. Click it again to go back to the previous mode.
+
+**표시할 서비스** lists every provider. **자동** is the default. **항상 표시** forces the row on. **숨김** forces it off. Under **자동**, Phosphor looks for a credential file, a usage log, an API key, or a `billing-screens.json` reading. Finding `amp` or `droid` on `PATH`, or a JetBrains IDE in `/Applications`, is not enough.
+
+The Elite chip is back, on the current label. Above 2 merged PRs per week it reads `Elite band · 18.0 PR/wk (benchmark >2.0)` and shimmers gold. Reduce Motion leaves a still glow. That "10%" people saw stuck is LinearB's published ceiling for the Elite band (more than 2.0 merged PRs per developer per week). It is not progress toward a monthly goal. Phosphor does not have a 3,000 PR/month target. Past that ceiling the label shows the real rate, so 3.0 and 18.0 do not look the same.
 
 ## 0.3.3
 
@@ -237,11 +255,11 @@ cd phosphor-hud
 
 로그인 없이 화면만 보려면 `dist/Phosphor.app/Contents/MacOS/Phosphor --demo`를 실행합니다. 이 데모에는 실제 계정 데이터가 없습니다.
 
-버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴와 사용량 패널에는 `Phosphor 0.3.3`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.3.3`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
+버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴와 사용량 패널에는 `Phosphor 0.3.4`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.3.4`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
 
 ## Developers
 
-The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build of this branch shows `Phosphor 0.3.3` in the menu and on the usage panel. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.3.3`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
+The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build of this branch shows `Phosphor 0.3.4` in the menu and on the usage panel. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.3.4`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
 
 ## 한국어
 
@@ -252,7 +270,9 @@ The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSI
 - 기본 언어는 영어이며, 앱에서 영어 / 한국어 / macOS 시스템 언어를 고를 수 있습니다. 메뉴, 설정, 소진율·예상 소진 안내가 선택한 언어로 바뀝니다.
 - 로컬 로그를 API 정가로 환산해 **구독 ROI**를 계산하고, `gh` 로그인으로 **GitHub PR·커밋 효율**을 보여 줍니다. 등급 배지는 LinearB 2026 공개 벤치마크 기준입니다.
 - 쿠키·세션 스크래핑은 하지 않습니다. 각 공식 도구가 이미 저장해 둔 값만 읽고, 토큰은 출력하거나 저장하지 않습니다.
-- Windows용 첫 빌드도 같은 계산을 씁니다. 설치와 아직 안 되는 항목은 위의 Windows 절에 있습니다. 화면 문구는 영어입니다.
+- Windows용 첫 빌드도 같은 계산을 씁니다. 설치와 아직 안 되는 항목은 위의 Windows 절에 있습니다. 화면 문구는 영어이고, 접기 방식만 한국어 이름(고정, 더블클릭, 자동 접기)을 씁니다.
+- **접기 방식**은 고정, 더블클릭(기본값), 자동 접기 세 가지입니다. 헤더의 핀은 고정을 켰다 끄며, 끄면 이전에 고른 방식으로 돌아갑니다. 창의 왼쪽 위는 그대로입니다.
+- **표시할 서비스**의 기본값은 자동입니다. 로그인 파일, 사용 로그, API 키, 결제 화면 기록이 있을 때만 행이 나옵니다. 설치만 된 Amp, Droid, JetBrains AI 등은 코드에는 남아 있고, 증거가 생기면 다시 나타납니다. 서비스마다 항상 표시와 숨김을 고를 수 있습니다.
 
 ## License
 

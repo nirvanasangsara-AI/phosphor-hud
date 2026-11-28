@@ -9,8 +9,10 @@ final class ProviderRegistry: ObservableObject {
     static let shared = ProviderRegistry()
     static let native: Set<String> = ["claude", "codex", "antigravity", "grok", "grokbot", "copilot", "muse"]
 
-    /// id → what showed it's installed ("bin gemini", "app Cursor.app", "key in Keychain").
+    /// id → login, log, API key, or billing-screen evidence. A binary or an app bundle is not enough.
     @Published private(set) var detected: [String: String] = [:]
+    /// id → install hit ("bin amp", "app IntelliJ IDEA.app"). Shown in the menu, not drawn by itself.
+    @Published private(set) var installed: [String: String] = [:]
     @Published private(set) var profiles: [Profile] = []
     @Published private(set) var profileProblems: [String] = []
     private(set) var detectedAt: Date?
@@ -19,23 +21,31 @@ final class ProviderRegistry: ObservableObject {
     var extras: [ProviderSpec] { ProviderCatalog.all.filter { !Self.native.contains($0.id) } }
 
     var enabledExtras: [ProviderSpec] {
-        let on = Set(ProviderSelection.enabled(catalog: extras, detected: Set(detected.keys),
-                                               overrides: Prefs.shared.providerOverrides))
-        return extras.filter { on.contains($0.id) }
+        extras.filter { isEnabled($0.id) }
     }
 
     func isEnabled(_ id: String) -> Bool {
-        Prefs.shared.providerOverrides[id] ?? (detected[id] != nil)
+        switch Prefs.shared.display(for: id) {
+        case .always: return true
+        case .hidden: return false
+        case .auto: return Prefs.shared.providerOverrides[id] ?? (detected[id] != nil)
+        }
     }
 
     func toggle(_ id: String) {
-        Prefs.shared.providerOverrides[id] = !isEnabled(id)
+        if isEnabled(id) {
+            Prefs.shared.providerOverrides[id] = false
+            if Prefs.shared.display(for: id) == .always { Prefs.shared.setDisplay(id, .auto) }
+        } else {
+            Prefs.shared.providerOverrides[id] = true
+            Prefs.shared.setDisplay(id, .always)
+        }
     }
 
     /// Re-check installs (cheap file checks) and API keys (Keychain attributes only, never the secret).
     func rescan() async {
-        let found = Detector().detected()
-        var all = found
+        installed = Detector().detected()
+        var all = Detector().useEvidence()
         for spec in ProviderCatalog.all where spec.sources.contains(.apiKey) {
             if let env = spec.apiKeyEnv, ProcessInfo.processInfo.environment[env]?.isEmpty == false {
                 all[spec.id] = "$\(env)"

@@ -489,7 +489,7 @@ final class UsageStore: ObservableObject {
     /// Snapshots that should be drawn given current prefs.
     var visible: [ProviderSnapshot] {
         let p = Prefs.shared
-        return snapshots.filter { !p.hidden.contains($0.id) && (p.showUnavailable || $0.isAvailable) }.map { s in
+        return snapshots.filter { p.include($0) }.map { s in
             guard let a = accounts[s.id], a.planOverridden, let plan = a.plan else { return s }
             var s = s; s.planOverride = plan; return s
         }

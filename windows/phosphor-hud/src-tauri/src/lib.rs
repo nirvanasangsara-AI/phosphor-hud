@@ -24,6 +24,9 @@ struct Prefs {
     show_dev: Mutex<bool>,
     phone_sync: Mutex<bool>,
     phone: Mutex<Option<phosphor_core::sync::PhoneSync>>,
+    collapse_mode: Mutex<String>,
+    collapse_remembered: Mutex<String>,
+    expanded_height: Mutex<f64>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -34,6 +37,10 @@ struct PrefFile {
     show_dev: bool,
     #[serde(default)]
     phone_sync: bool,
+    #[serde(default)]
+    collapse_mode: String,
+    #[serde(default)]
+    collapse_remembered: String,
 }
 
 struct Net;
@@ -296,18 +303,76 @@ fn command_text(program: &Path, args: &[&str]) -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+fn canon_mode(raw: &str) -> String {
+    match raw {
+        "pin" | "auto" | "doubleClick" => raw.to_string(),
+        _ => "doubleClick".to_string(),
+    }
+}
+
+fn canon_remembered(raw: &str) -> String {
+    match raw {
+        "auto" | "doubleClick" => raw.to_string(),
+        _ => "doubleClick".to_string(),
+    }
+}
+
 fn save_prefs(prefs: &Prefs) {
     let demo = prefs.demo.lock().map(|g| *g).unwrap_or(false);
     let show_dev = prefs.show_dev.lock().map(|g| *g).unwrap_or(false);
     let phone_sync = prefs.phone_sync.lock().map(|g| *g).unwrap_or(false);
+    let collapse_mode = prefs
+        .collapse_mode
+        .lock()
+        .map(|g| canon_mode(&g))
+        .unwrap_or_else(|_| "doubleClick".into());
+    let collapse_remembered = prefs
+        .collapse_remembered
+        .lock()
+        .map(|g| canon_remembered(&g))
+        .unwrap_or_else(|_| "doubleClick".into());
     write_prefs(
         &support_dir(),
         &PrefFile {
             demo,
             show_dev,
             phone_sync,
+            collapse_mode,
+            collapse_remembered,
         },
     );
+}
+
+#[derive(Serialize)]
+struct CollapsePrefs {
+    mode: String,
+    remembered: String,
+}
+
+fn resize_hud(window: &WebviewWindow, prefs: &Prefs, collapsed: bool) {
+    use tauri::{LogicalPosition, LogicalSize};
+    let scale = window.scale_factor().unwrap_or(1.0).max(0.5);
+    let Ok(pos) = window.outer_position() else { return };
+    let Ok(size) = window.outer_size() else { return };
+    let width = size.width as f64 / scale;
+    let height = size.height as f64 / scale;
+    let x = pos.x as f64 / scale;
+    let y = pos.y as f64 / scale;
+    if collapsed {
+        if height > 80.0 {
+            if let Ok(mut slot) = prefs.expanded_height.lock() {
+                *slot = height;
+            }
+        }
+        let _ = window.set_min_size(Some(LogicalSize::new(300.0, 44.0)));
+        let _ = window.set_size(LogicalSize::new(width.max(300.0), 52.0));
+    } else {
+        let saved = prefs.expanded_height.lock().map(|g| *g).unwrap_or(0.0);
+        let target = if saved > 80.0 { saved } else { 640.0 };
+        let _ = window.set_size(LogicalSize::new(width.max(300.0), target));
+        let _ = window.set_min_size(Some(LogicalSize::new(300.0, 220.0)));
+    }
+    let _ = window.set_position(LogicalPosition::new(x, y));
 }
 
 fn host_label() -> String {
@@ -487,6 +552,40 @@ fn set_phone_sync(prefs: State<Prefs>, enabled: bool) -> PhoneSyncView {
 }
 
 #[tauri::command]
+fn collapse_prefs(prefs: State<Prefs>) -> CollapsePrefs {
+    CollapsePrefs {
+        mode: prefs
+            .collapse_mode
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| "doubleClick".into()),
+        remembered: prefs
+            .collapse_remembered
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| "doubleClick".into()),
+    }
+}
+
+#[tauri::command]
+fn set_collapse_mode(prefs: State<Prefs>, mode: String, remembered: String) {
+    if let Ok(mut slot) = prefs.collapse_mode.lock() {
+        *slot = canon_mode(&mode);
+    }
+    if let Ok(mut slot) = prefs.collapse_remembered.lock() {
+        *slot = canon_remembered(&remembered);
+    }
+    save_prefs(&prefs);
+}
+
+#[tauri::command]
+fn set_hud_collapsed(app: AppHandle, prefs: State<Prefs>, collapsed: bool) {
+    if let Some(window) = hud(&app) {
+        resize_hud(&window, &prefs, collapsed);
+    }
+}
+
+#[tauri::command]
 fn rotate_phone_code(prefs: State<Prefs>) -> PhoneSyncView {
     if let Ok(slot) = prefs.phone.lock() {
         if let Some(server) = slot.as_ref() {
@@ -509,6 +608,9 @@ pub fn run() {
             show_dev: Mutex::new(saved.show_dev),
             phone_sync: Mutex::new(saved.phone_sync),
             phone: Mutex::new(None),
+            collapse_mode: Mutex::new(canon_mode(&saved.collapse_mode)),
+            collapse_remembered: Mutex::new(canon_remembered(&saved.collapse_remembered)),
+            expanded_height: Mutex::new(0.0),
         })
         .setup(|app| {
             if let Some(prefs) = app.try_state::<Prefs>() {
@@ -582,7 +684,10 @@ pub fn run() {
             set_show_dev,
             phone_sync_state,
             set_phone_sync,
-            rotate_phone_code
+            rotate_phone_code,
+            collapse_prefs,
+            set_collapse_mode,
+            set_hud_collapsed
         ])
         .run(tauri::generate_context!())
         .expect("error while running Phosphor");
