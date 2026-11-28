@@ -82,6 +82,7 @@ struct RootView: View {
                 }
                 if prefs.showChart { UsageChartView(logs: store.logs, theme: theme) }
             }
+            PanelIdentity(theme: theme)
         }
         .id(prefs.language)   // redraw burn-rate lines and menus when the language changes
         .modifier(Glow(theme: theme))
@@ -149,6 +150,36 @@ struct Header: View {
         guard let t = store.lastRefresh else { return "" }
         let m = Int(now.timeIntervalSince(t) / 60)
         return theme.name(m < 1 ? "live" : "\(m)m ago")
+    }
+}
+
+/// Quiet product mark at the bottom of the usage panel, so a screenshot names the app.
+/// The leading box is reserved for a logo image; Φ is the text stand-in until one exists.
+/// Color is each theme's `dim`, the same muted ink as secondary labels, so it stays
+/// legible on Clean, Retro, Matrix, Glasses, and Raid without a second palette.
+struct PanelIdentity: View {
+    let theme: Theme
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 5) {
+            Text("Φ")
+                .font(theme.font(11, .medium))
+                .foregroundStyle(theme.dim)
+                .frame(width: 14, height: 14)
+                .accessibilityHidden(true)
+            Text("Phosphor")
+                .font(theme.font(9, .medium))
+                .foregroundStyle(theme.dim)
+            Text(Phosphor.version)
+                .font(theme.font(9))
+                .foregroundStyle(theme.dim)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Phosphor.identity)
+        .help(Phosphor.identity)
     }
 }
 

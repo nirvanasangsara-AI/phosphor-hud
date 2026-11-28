@@ -1,6 +1,6 @@
 # Releasing Phosphor
 
-The version people see is the `VERSION` file at the repo root. `scripts/build-app.sh` reads it for `CFBundleShortVersionString` on every local build and in CI. `CFBundleVersion` is the git commit count (`git rev-list --count HEAD`), so it goes up even when the marketing version stays put. The menu bar menu shows `Phosphor 0.2.1`.
+The version people see is the `VERSION` file at the repo root. `scripts/build-app.sh` reads it for `CFBundleShortVersionString` on every local build and in CI. `CFBundleVersion` is the git commit count (`git rev-list --count HEAD`), so it goes up even when the marketing version stays put. The menu and the bottom of the usage panel show `Phosphor 0.2.2`.
 
 ## Publish
 
@@ -43,6 +43,6 @@ Signing runs when `APPLE_ID`, `TEAM_ID`, and `APPLE_CERTIFICATE` are all set (an
 
 ## Checklist
 
-- `swift test` green, `./scripts/build-app.sh --run` launches, the menu says `Phosphor` plus the `VERSION` file.
+- `swift test` green, `./scripts/build-app.sh --run` launches, and the menu and the usage panel say `Phosphor` plus the `VERSION` file.
 - No secrets in the repo: the app reads logins from the official CLIs at runtime only.
 - Screenshots in `docs/screenshots` come from `--demo --stage` (no real account data, no third-party logos).

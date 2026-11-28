@@ -26,7 +26,7 @@ Finder에서 Phosphor를 마우스 오른쪽 단추로 클릭하고 **열기**�
 
 macOS 15 이상에서는 시스템 설정 > 개인정보 보호 및 보안으로 가서 **그래도 열기**를 눌러도 됩니다.
 
-한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위의 `Phosphor 0.2.1`에서 설치한 버전을 확인할 수 있습니다.
+한 번 이렇게 열면 다음부터는 그대로 실행됩니다. 메뉴 맨 위와 사용량 패널 아래의 `Phosphor 0.2.2`에서 설치한 버전을 확인할 수 있습니다.
 
 ---
 
@@ -50,7 +50,7 @@ In Finder, right-click Phosphor and choose **Open**. When the dialog appears, cl
 
 On macOS 15 and later you can also open System Settings, go to Privacy & Security, and click **Open Anyway**.
 
-After that first launch it opens normally. The top line of the menu, `Phosphor 0.2.1`, is the version you have.
+After that first launch it opens normally. The top line of the menu and the bottom of the usage panel both read `Phosphor 0.2.2`.
 
 ---
 
@@ -134,11 +134,11 @@ cd phosphor-hud
 
 로그인 없이 화면만 보려면 `dist/Phosphor.app/Contents/MacOS/Phosphor --demo`를 실행합니다. 이 데모에는 실제 계정 데이터가 없습니다.
 
-버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴에는 `Phosphor 0.2.1`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.2.1`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
+버전은 저장소 루트의 [`VERSION`](VERSION) 파일 하나입니다. 로컬 빌드와 CI가 같은 파일을 읽고, 메뉴와 사용량 패널 아래에는 `Phosphor 0.2.2`처럼 표시됩니다. 빌드 번호(`CFBundleVersion`)는 git 커밋 수라서 커밋마다 올라갑니다. 릴리스할 때는 `VERSION`을 올린 다음, 그 값과 같은 태그(`v0.2.2`)를 푸시합니다. Actions가 DMG와 zip을 그 릴리스에 붙입니다. 자세한 절차는 [docs/RELEASE.md](docs/RELEASE.md)에 있습니다.
 
 ## Developers
 
-The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build shows the same `Phosphor 0.2.1` as a release build. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.2.1`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
+The commands above build the app locally. `./scripts/build-app.sh` reads [`VERSION`](VERSION) and writes it into the app, so a local build shows the same `Phosphor 0.2.2` in the menu and on the usage panel as a release build. To publish, bump `VERSION`, merge to `main`, and push a matching tag such as `v0.2.2`. A Homebrew cask template is in [`packaging/homebrew`](packaging/homebrew/phosphor.rb).
 
 ## 한국어
 

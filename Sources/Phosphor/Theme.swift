@@ -49,6 +49,10 @@ enum Phosphor {
         let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? "dev" : trimmed
     }
+
+    /// Product name plus marketing version, e.g. "Phosphor 0.2.2".
+    /// The menu and the usage-panel mark both use this string.
+    static var identity: String { "Phosphor \(version)" }
 }
 
 // MARK: - JSON schema

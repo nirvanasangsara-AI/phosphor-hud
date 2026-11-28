@@ -56,7 +56,7 @@ same `id` as a built-in replaces it.
 | `borderWidth` | number | Panel border width, pt (border colour is `colors.border`). |
 | `width` | number | Panel width in list layout, pt. |
 | `compactWidth` | number | Panel width in compact mode, pt. |
-| `header` | string | Header text. `{online}` → number of providers shown, `{version}` → app version. |
+| `header` | string | Header text. `{online}` → number of providers shown, `{version}` → app version. The panel also always draws a small Φ, the name Phosphor, and the app version along the bottom, in addition to this header. |
 | `prompt` | string / null | Prefix before provider names, e.g. `"C:\\>"` or `">"`. |
 
 ### `colors`

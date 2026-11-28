@@ -297,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(.separator())
         }
 
-        let versionItem = NSMenuItem(title: "Phosphor \(Phosphor.version)", action: nil, keyEquivalent: "")
+        let versionItem = NSMenuItem(title: Phosphor.identity, action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
         menu.addItem(.separator())
